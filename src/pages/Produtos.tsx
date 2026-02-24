@@ -128,11 +128,20 @@ const Produtos = () => {
     const startScanner = async () => {
         if (isScannerActive) return;
 
-        try {
-            const elementId = "product-model-reader";
+        // Activate scanner state FIRST so the element is rendered in DOM
+        setIsScannerActive(true);
 
-            // Wait for element to be in DOM
-            setTimeout(async () => {
+        setTimeout(async () => {
+            try {
+                const elementId = "product-model-reader";
+                const element = document.getElementById(elementId);
+
+                if (!element) {
+                    console.error("Elemento do scanner não encontrado no DOM");
+                    setIsScannerActive(false);
+                    return;
+                }
+
                 const html5QrCode = new Html5Qrcode(elementId);
                 html5QrCodeRef.current = html5QrCode;
 
@@ -158,13 +167,15 @@ const Produtos = () => {
                         },
                         () => { }
                     );
-                    setIsScannerActive(true);
+                } else {
+                    console.error("Nenhuma câmera encontrada");
+                    setIsScannerActive(false);
                 }
-            }, 100);
-        } catch (err) {
-            console.error("Erro no scanner:", err);
-            setIsScannerActive(false);
-        }
+            } catch (err) {
+                console.error("Erro ao iniciar scanner:", err);
+                setIsScannerActive(false);
+            }
+        }, 150); // Small delay to ensure React finish rendering the element
     };
 
     const stopScanner = async () => {
