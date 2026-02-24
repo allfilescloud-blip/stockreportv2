@@ -396,15 +396,6 @@ const Produtos = () => {
                                 />
                             </div>
                             <div>
-                                <label className="block text-xs font-semibold text-slate-500 uppercase mb-2 ml-1">Modelo</label>
-                                <input
-                                    value={model}
-                                    onChange={(e) => setModel(e.target.value)}
-                                    className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-                                    placeholder="Ex: iPhone 13 Pro"
-                                />
-                            </div>
-                            <div>
                                 <label className="block text-xs font-semibold text-slate-500 uppercase mb-2 ml-1">Descrição</label>
                                 <textarea
                                     required
@@ -412,6 +403,15 @@ const Produtos = () => {
                                     onChange={(e) => setDescription(e.target.value)}
                                     className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-white focus:ring-2 focus:ring-blue-500 outline-none h-24 transition-all"
                                     placeholder="Descrição detalhada do produto..."
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-semibold text-slate-500 uppercase mb-2 ml-1">Modelo</label>
+                                <input
+                                    value={model}
+                                    onChange={(e) => setModel(e.target.value)}
+                                    className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                                    placeholder="Ex: iPhone 13 Pro"
                                 />
                             </div>
                             <div>
