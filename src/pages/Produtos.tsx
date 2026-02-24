@@ -13,7 +13,9 @@ import {
     where
 } from 'firebase/firestore';
 import { db } from '../db/firebase';
-import { Plus, Search, Edit2, History, X, Printer, Filter, Info } from 'lucide-react';
+import { Plus, Search, Edit2, History, X, Printer, Filter, Info, ScanBarcode, StopCircle } from 'lucide-react';
+import { Html5Qrcode } from 'html5-qrcode';
+import { useRef } from 'react';
 
 interface Product {
     id: string;
@@ -39,6 +41,10 @@ const Produtos = () => {
     const [model, setModel] = useState('');
     const [status, setStatus] = useState<'active' | 'inactive'>('active');
     const [error, setError] = useState<string | null>(null);
+
+    // Scanner states
+    const [isScannerActive, setIsScannerActive] = useState(false);
+    const html5QrCodeRef = useRef<Html5Qrcode | null>(null);
 
     useEffect(() => {
         const q = query(collection(db, 'products'), orderBy('sku', 'asc'));
@@ -100,7 +106,83 @@ const Produtos = () => {
         resetForm();
     };
 
+    const playSound = (type: 'success' | 'error') => {
+        const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+        const oscillator = audioContext.createOscillator();
+        const gainNode = audioContext.createGain();
+
+        oscillator.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+
+        if (type === 'success') {
+            oscillator.type = 'sine';
+            oscillator.frequency.setValueAtTime(800, audioContext.currentTime);
+            oscillator.frequency.exponentialRampToValueAtTime(1200, audioContext.currentTime + 0.1);
+            gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
+            oscillator.start();
+            oscillator.stop(audioContext.currentTime + 0.1);
+        }
+    };
+
+    const startScanner = async () => {
+        if (isScannerActive) return;
+
+        try {
+            const elementId = "product-model-reader";
+
+            // Wait for element to be in DOM
+            setTimeout(async () => {
+                const html5QrCode = new Html5Qrcode(elementId);
+                html5QrCodeRef.current = html5QrCode;
+
+                const devices = await Html5Qrcode.getCameras();
+                if (devices && devices.length) {
+                    let cameraId = devices[0].id;
+                    const backCamera = devices.find(d =>
+                        d.label.toLowerCase().includes('back') ||
+                        d.label.toLowerCase().includes('traseira')
+                    );
+                    if (backCamera) cameraId = backCamera.id;
+
+                    await html5QrCode.start(
+                        cameraId,
+                        {
+                            fps: 10,
+                            qrbox: { width: 250, height: 150 },
+                        },
+                        (decodedText) => {
+                            setModel(decodedText);
+                            playSound('success');
+                            stopScanner();
+                        },
+                        () => { }
+                    );
+                    setIsScannerActive(true);
+                }
+            }, 100);
+        } catch (err) {
+            console.error("Erro no scanner:", err);
+            setIsScannerActive(false);
+        }
+    };
+
+    const stopScanner = async () => {
+        if (html5QrCodeRef.current) {
+            try {
+                await html5QrCodeRef.current.stop();
+                html5QrCodeRef.current.clear();
+            } catch (err) {
+                console.warn("Erro ao parar scanner:", err);
+            } finally {
+                html5QrCodeRef.current = null;
+                setIsScannerActive(false);
+            }
+        }
+    };
+
     const resetForm = () => {
+        stopScanner();
         setSku('');
         setEan('');
         setDescription('');
@@ -407,12 +489,34 @@ const Produtos = () => {
                             </div>
                             <div>
                                 <label className="block text-xs font-semibold text-slate-500 uppercase mb-2 ml-1">Modelo</label>
-                                <input
-                                    value={model}
-                                    onChange={(e) => setModel(e.target.value)}
-                                    className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-                                    placeholder="Ex: iPhone 13 Pro"
-                                />
+                                <div className="flex gap-2">
+                                    <input
+                                        value={model}
+                                        onChange={(e) => setModel(e.target.value)}
+                                        className="flex-1 px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                                        placeholder="Ex: iPhone 13 Pro"
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={isScannerActive ? stopScanner : startScanner}
+                                        className={`p-3 rounded-lg border transition-all active:scale-95 ${isScannerActive
+                                            ? 'bg-red-500/10 border-red-500 text-red-500 animate-pulse'
+                                            : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white hover:bg-slate-700'
+                                            }`}
+                                        title={isScannerActive ? "Parar Leitura" : "Escanear Modelo"}
+                                    >
+                                        {isScannerActive ? <StopCircle size={24} /> : <ScanBarcode size={24} />}
+                                    </button>
+                                </div>
+
+                                {isScannerActive && (
+                                    <div className="mt-4 overflow-hidden rounded-xl bg-black border border-blue-500/30">
+                                        <div id="product-model-reader" className="w-full"></div>
+                                        <div className="bg-slate-900/80 py-2 text-center text-[10px] text-blue-400 font-bold uppercase tracking-widest">
+                                            Aponte para o código
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                             <div>
                                 <label className="block text-xs font-semibold text-slate-500 uppercase mb-2 ml-1">Status</label>
