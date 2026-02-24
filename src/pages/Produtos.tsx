@@ -231,12 +231,12 @@ const Produtos = () => {
 
         return matchesSearch && matchesStatus;
     }).sort((a, b) => {
-        const valA = (a[sortColumn] || '').toLowerCase();
-        const valB = (b[sortColumn] || '').toLowerCase();
+        const valA = a[sortColumn] || '';
+        const valB = b[sortColumn] || '';
 
-        if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
-        if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
-        return 0;
+        return sortDirection === 'asc'
+            ? valA.localeCompare(valB, undefined, { numeric: true, sensitivity: 'base' })
+            : valB.localeCompare(valA, undefined, { numeric: true, sensitivity: 'base' });
     });
 
     const handlePrint = () => {
