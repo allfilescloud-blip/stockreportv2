@@ -519,7 +519,7 @@ const Testados = () => {
                                     <ClipboardList size={16} />
                                     Itens no Relatório ({reportItems.length})
                                 </h3>
-                                <div className="overflow-x-auto rounded-xl border border-slate-800">
+                                <div className="hidden md:block overflow-x-auto rounded-xl border border-slate-800">
                                     <table className="w-full text-left text-sm">
                                         <thead className="bg-slate-900 text-slate-500 uppercase text-[10px] tracking-wider">
                                             <tr>
@@ -559,6 +559,45 @@ const Testados = () => {
                                             )}
                                         </tbody>
                                     </table>
+                                </div>
+
+                                {/* Mobile View dos itens no modal */}
+                                <div className="md:hidden space-y-3">
+                                    {reportItems.map((item, idx) => {
+                                        const diff = item.currentCount - item.previousCount;
+                                        return (
+                                            <div key={idx} className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex justify-between items-center shadow-sm">
+                                                <div className="flex-1 min-w-0 pr-4">
+                                                    <p className="font-mono text-blue-400 font-bold text-sm truncate">{item.sku}</p>
+                                                    <p className="text-slate-500 text-[10px] truncate">{item.description}</p>
+                                                    <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                                                        <div className="text-slate-400 bg-slate-800/50 p-2 rounded-lg text-center">
+                                                            <span className="block text-[8px] uppercase font-bold text-slate-500 mb-0.5">Anterior</span>
+                                                            <span className="font-bold">{item.previousCount}</span>
+                                                        </div>
+                                                        <div className="text-white bg-slate-800/50 p-2 rounded-lg text-center">
+                                                            <span className="block text-[8px] uppercase font-bold text-slate-500 mb-0.5">Atual</span>
+                                                            <span className="font-bold">{item.currentCount}</span>
+                                                        </div>
+                                                    </div>
+                                                    <div className={`mt-2 text-center p-1 rounded-lg text-[10px] font-bold ${diff > 0 ? 'bg-emerald-500/10 text-emerald-400' : diff < 0 ? 'bg-red-500/10 text-red-500' : 'bg-slate-800 text-slate-500'}`}>
+                                                        Diferença: {diff > 0 ? `+${diff}` : diff}
+                                                    </div>
+                                                </div>
+                                                <button
+                                                    onClick={() => setReportItems(reportItems.filter((_, i) => i !== idx))}
+                                                    className="p-3 bg-red-400/10 text-red-500 rounded-lg active:scale-95 transition-all"
+                                                >
+                                                    <Trash2 size={18} />
+                                                </button>
+                                            </div>
+                                        );
+                                    })}
+                                    {reportItems.length === 0 && (
+                                        <div className="py-8 text-center text-slate-500 italic text-sm border-2 border-dashed border-slate-800 rounded-xl">
+                                            Nenhum item adicionado
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         </div>
