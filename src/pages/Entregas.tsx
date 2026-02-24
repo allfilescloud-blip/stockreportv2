@@ -311,13 +311,8 @@ const Entregas = () => {
                                 const sequentialId = reports.length - index;
                                 return (
                                     <tr key={report.id} className="hover:bg-slate-800/30 transition-colors">
-                                        <td className="px-6 py-4 font-mono text-purple-400 flex items-center gap-2">
+                                        <td className="px-6 py-4 font-mono text-purple-400">
                                             #{sequentialId}
-                                            {report.notes && (
-                                                <span title={report.notes}>
-                                                    <Eye size={14} className="text-blue-400" />
-                                                </span>
-                                            )}
                                         </td>
                                         <td className="px-6 py-4 text-slate-300">
                                             {report.createdAt?.toDate ? report.createdAt.toDate().toLocaleString('pt-BR') : 'Processando...'}
@@ -329,6 +324,11 @@ const Entregas = () => {
                                         </td>
                                         <td className="px-6 py-4 text-right">
                                             <div className="flex justify-end gap-2 text-nowrap">
+                                                {report.notes && (
+                                                    <div className="p-2 text-blue-400" title={report.notes}>
+                                                        <Eye size={18} />
+                                                    </div>
+                                                )}
                                                 <button
                                                     onClick={() => handleShare(report)}
                                                     className="p-2 text-slate-400 hover:text-white hover:bg-slate-700 rounded-lg transition-all"
@@ -380,15 +380,19 @@ const Entregas = () => {
                             <div key={report.id} className="p-4 space-y-4 hover:bg-slate-800/20 transition-colors">
                                 <div className="flex justify-between items-center">
                                     <div className="space-y-1">
-                                        <div className="flex items-center gap-2">
-                                            <p className="font-mono text-purple-400 font-bold">#{sequentialId}</p>
-                                            {report.notes && <Eye size={12} className="text-blue-400" />}
-                                        </div>
+                                        <p className="font-mono text-purple-400 font-bold">#{sequentialId}</p>
                                         <p className="text-slate-500 text-[10px]">{dateText}</p>
                                     </div>
-                                    <span className="bg-purple-500/10 text-purple-400 px-2 py-1 rounded-full text-[10px] font-bold">
-                                        {report.totalItems} ITENS
-                                    </span>
+                                    <div className="flex items-center gap-2">
+                                        {report.notes && (
+                                            <span title={report.notes}>
+                                                <Eye size={14} className="text-blue-400" />
+                                            </span>
+                                        )}
+                                        <span className="bg-purple-500/10 text-purple-400 px-2 py-1 rounded-full text-[10px] font-bold">
+                                            {report.totalItems} ITENS
+                                        </span>
+                                    </div>
                                 </div>
 
                                 <div className="flex items-center justify-between pt-2 border-t border-slate-800/50">
