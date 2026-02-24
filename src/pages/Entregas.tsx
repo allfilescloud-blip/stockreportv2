@@ -302,7 +302,6 @@ const Entregas = () => {
                             <tr className="bg-slate-800/50 text-slate-400 text-sm">
                                 <th className="px-6 py-4 font-semibold">ID</th>
                                 <th className="px-6 py-4 font-semibold">Criação</th>
-                                <th className="px-6 py-4 font-semibold">Alteração</th>
                                 <th className="px-6 py-4 font-semibold text-center">Itens</th>
                                 <th className="px-6 py-4 font-semibold text-right">Ações</th>
                             </tr>
@@ -312,21 +311,16 @@ const Entregas = () => {
                                 const sequentialId = reports.length - index;
                                 return (
                                     <tr key={report.id} className="hover:bg-slate-800/30 transition-colors">
-                                        <td className="px-6 py-4 font-mono text-purple-400">
-                                            <div className="flex items-center gap-2">
-                                                #{sequentialId}
-                                                {report.notes && (
-                                                    <span title={report.notes}>
-                                                        <Eye size={14} className="text-slate-500" />
-                                                    </span>
-                                                )}
-                                            </div>
+                                        <td className="px-6 py-4 font-mono text-purple-400 flex items-center gap-2">
+                                            #{sequentialId}
+                                            {report.notes && (
+                                                <span title={report.notes}>
+                                                    <Eye size={14} className="text-blue-400" />
+                                                </span>
+                                            )}
                                         </td>
                                         <td className="px-6 py-4 text-slate-300">
                                             {report.createdAt?.toDate ? report.createdAt.toDate().toLocaleString('pt-BR') : 'Processando...'}
-                                        </td>
-                                        <td className="px-6 py-4 text-slate-400 text-sm">
-                                            {report.updatedAt?.toDate ? report.updatedAt.toDate().toLocaleString('pt-BR') : '-'}
                                         </td>
                                         <td className="px-6 py-4 text-center">
                                             <span className="bg-purple-500/10 text-purple-400 px-3 py-1 rounded-full text-xs font-bold">
@@ -388,9 +382,7 @@ const Entregas = () => {
                                     <div className="space-y-1">
                                         <div className="flex items-center gap-2">
                                             <p className="font-mono text-purple-400 font-bold">#{sequentialId}</p>
-                                            {report.notes && (
-                                                <Eye size={12} className="text-slate-500" />
-                                            )}
+                                            {report.notes && <Eye size={12} className="text-blue-400" />}
                                         </div>
                                         <p className="text-slate-500 text-[10px]">{dateText}</p>
                                     </div>
