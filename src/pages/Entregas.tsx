@@ -30,6 +30,7 @@ interface Report {
     totalItems: number;
     items: ReportItem[];
     userName?: string;
+    notes?: string;
 }
 
 const Entregas = () => {
@@ -44,6 +45,7 @@ const Entregas = () => {
     const [showConfirmModal, setShowConfirmModal] = useState(false);
     const [duplicateItemIndex, setDuplicateItemIndex] = useState<number | null>(null);
     const [filterDate, setFilterDate] = useState('');
+    const [notes, setNotes] = useState('');
 
     const skuInputRef = useRef<HTMLInputElement>(null);
     const quantityInputRef = useRef<HTMLInputElement>(null);
@@ -139,6 +141,7 @@ const Entregas = () => {
             await updateDoc(reportRef, {
                 items: reportItems,
                 totalItems: reportItems.length,
+                notes: notes,
                 updatedAt: serverTimestamp()
             });
         } else {
@@ -146,6 +149,7 @@ const Entregas = () => {
                 type: 'delivery',
                 items: reportItems,
                 totalItems: reportItems.length,
+                notes: notes,
                 createdAt: serverTimestamp(),
                 updatedAt: serverTimestamp()
             });
@@ -168,6 +172,7 @@ const Entregas = () => {
 
         setIsModalOpen(false);
         setReportItems([]);
+        setNotes('');
         setCurrentReport(null);
     };
 
@@ -180,7 +185,11 @@ const Entregas = () => {
     const handleShare = async (report: Report) => {
         const sequentialId = reports.length - reports.findIndex(r => r.id === report.id);
         const dateText = report.createdAt?.toDate ? report.createdAt.toDate().toLocaleString('pt-BR') : 'Processando...';
-        const text = `📊 *Registro de Entrega #${sequentialId}*\n📅 *Data:* ${dateText}\n📝 *Itens:* ${report.totalItems}\n👤 *Usuário:* ${report.userName || 'N/A'}`;
+        let text = `📊 *Registro de Entrega #${sequentialId}*\n📅 *Data:* ${dateText}\n📝 *Itens:* ${report.totalItems}\n👤 *Usuário:* ${report.userName || 'N/A'}`;
+
+        if (report.notes) {
+            text += `\n\n📝 *Observações:* ${report.notes}`;
+        }
 
         if (navigator.share) {
             try {
@@ -223,6 +232,7 @@ const Entregas = () => {
                             <p>Total de Itens: ${report.totalItems}</p>
                         </div>
                     </div>
+                    ${report.notes ? `<div style="margin-top: 15px; padding: 10px; background: #f8fafc; border-left: 4px solid #333;"><p style="margin:0; font-weight: bold; font-size: 14px;">Observações:</p><p style="margin:5px 0 0 0; font-size: 14px;">${report.notes}</p></div>` : ''}
                     <table>
                         <thead>
                             <tr>
@@ -327,6 +337,7 @@ const Entregas = () => {
                                                     onClick={() => {
                                                         setCurrentReport(report);
                                                         setReportItems(report.items);
+                                                        setNotes(report.notes || '');
                                                         setIsModalOpen(true);
                                                     }}
                                                     className="p-2 text-slate-400 hover:text-white hover:bg-slate-700 rounded-lg transition-all"
@@ -380,6 +391,7 @@ const Entregas = () => {
                                             onClick={() => {
                                                 setCurrentReport(report);
                                                 setReportItems(report.items);
+                                                setNotes(report.notes || '');
                                                 setIsModalOpen(true);
                                             }}
                                             className="flex items-center gap-1.5 px-3 py-2 bg-slate-800 text-slate-300 rounded-lg text-xs font-bold border border-slate-700"
@@ -423,12 +435,22 @@ const Entregas = () => {
                     <div className="bg-slate-950 border border-slate-800 rounded-2xl w-full max-w-4xl max-h-[95vh] flex flex-col shadow-2xl overflow-hidden">
                         <div className="p-4 md:p-6 border-b border-slate-800 flex justify-between items-center bg-slate-900/50">
                             <h2 className="text-xl md:text-2xl font-bold text-white truncate px-2">{currentReport ? `Editando Entrega #${reports.length - reports.findIndex(r => r.id === currentReport.id)}` : 'Novo Registro de Entrega'}</h2>
-                            <button onClick={() => { setIsModalOpen(false); setReportItems([]); setCurrentReport(null); }} className="text-slate-400 hover:text-white">
+                            <button onClick={() => { setIsModalOpen(false); setReportItems([]); setNotes(''); setCurrentReport(null); }} className="text-slate-400 hover:text-white">
                                 <X size={24} />
                             </button>
                         </div>
 
                         <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6">
+                            <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+                                <label className="block text-xs font-semibold text-slate-500 uppercase mb-2 ml-1">Observações do Relatório</label>
+                                <textarea
+                                    value={notes}
+                                    onChange={(e) => setNotes(e.target.value)}
+                                    placeholder="Ex: Nota fiscal #1234, entregador Fulano, material com avaria na caixa..."
+                                    className="w-full bg-slate-800 border border-slate-700 rounded-lg p-3 text-white text-sm focus:ring-2 focus:ring-purple-500 outline-none transition-all resize-none min-h-[80px]"
+                                />
+                            </div>
+
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-slate-900/50 p-4 rounded-xl border border-slate-800">
                                 <div className="md:col-span-2 relative">
                                     <label className="block text-xs font-semibold text-slate-500 uppercase mb-2 ml-1">Produto</label>
@@ -530,7 +552,7 @@ const Entregas = () => {
                         </div>
 
                         <div className="p-6 border-t border-slate-800 bg-slate-900/50 flex flex-col md:flex-row justify-end gap-3 md:gap-4">
-                            <button onClick={() => { setIsModalOpen(false); setReportItems([]); setCurrentReport(null); }} className="order-2 md:order-1 px-6 py-2 text-slate-400 hover:text-white transition-colors">Cancelar</button>
+                            <button onClick={() => { setIsModalOpen(false); setReportItems([]); setNotes(''); setCurrentReport(null); }} className="order-2 md:order-1 px-6 py-2 text-slate-400 hover:text-white transition-colors">Cancelar</button>
                             <button onClick={saveReport} disabled={reportItems.length === 0} className="order-1 md:order-2 px-8 py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white font-bold rounded-xl transition-all shadow-lg active:scale-95">Finalizar</button>
                         </div>
                     </div>
