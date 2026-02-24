@@ -13,7 +13,7 @@ import {
     deleteDoc
 } from 'firebase/firestore';
 import { db } from '../db/firebase';
-import { Search, Plus, Printer, Trash2, Edit2, X, AlertTriangle, Share2, ClipboardList } from 'lucide-react';
+import { Search, Plus, Printer, Trash2, Edit2, X, AlertTriangle, Share2, ClipboardList, Eye } from 'lucide-react';
 
 interface ReportItem {
     productId: string;
@@ -312,7 +312,16 @@ const Entregas = () => {
                                 const sequentialId = reports.length - index;
                                 return (
                                     <tr key={report.id} className="hover:bg-slate-800/30 transition-colors">
-                                        <td className="px-6 py-4 font-mono text-purple-400">#{sequentialId}</td>
+                                        <td className="px-6 py-4 font-mono text-purple-400">
+                                            <div className="flex items-center gap-2">
+                                                #{sequentialId}
+                                                {report.notes && (
+                                                    <span title={report.notes}>
+                                                        <Eye size={14} className="text-slate-500" />
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </td>
                                         <td className="px-6 py-4 text-slate-300">
                                             {report.createdAt?.toDate ? report.createdAt.toDate().toLocaleString('pt-BR') : 'Processando...'}
                                         </td>
@@ -377,7 +386,12 @@ const Entregas = () => {
                             <div key={report.id} className="p-4 space-y-4 hover:bg-slate-800/20 transition-colors">
                                 <div className="flex justify-between items-center">
                                     <div className="space-y-1">
-                                        <p className="font-mono text-purple-400 font-bold">#{sequentialId}</p>
+                                        <div className="flex items-center gap-2">
+                                            <p className="font-mono text-purple-400 font-bold">#{sequentialId}</p>
+                                            {report.notes && (
+                                                <Eye size={12} className="text-slate-500" />
+                                            )}
+                                        </div>
                                         <p className="text-slate-500 text-[10px]">{dateText}</p>
                                     </div>
                                     <span className="bg-purple-500/10 text-purple-400 px-2 py-1 rounded-full text-[10px] font-bold">
