@@ -13,7 +13,7 @@ import {
     where
 } from 'firebase/firestore';
 import { db } from '../db/firebase';
-import { Plus, Search, Edit2, History, X, Printer, Filter, Share2 } from 'lucide-react';
+import { Plus, Search, Edit2, History, X, Printer, Filter } from 'lucide-react';
 
 interface Product {
     id: string;
@@ -106,24 +106,6 @@ const Produtos = () => {
         setIsModalOpen(false);
     };
 
-    const handleShare = async (product: Product) => {
-        const text = `📦 *Produto: ${product.description}*\n🔹 *SKU:* ${product.sku}\n${product.ean ? `🔹 *EAN:* ${product.ean}\n` : ''}🔹 *Status:* ${product.status === 'active' ? 'Ativo' : 'Inativo'}`;
-
-        if (navigator.share) {
-            try {
-                await navigator.share({
-                    title: `Produto: ${product.sku}`,
-                    text: text
-                });
-            } catch (error) {
-                console.error('Erro ao compartilhar:', error);
-            }
-        } else {
-            // Fallback para cópia se share não disponível
-            navigator.clipboard.writeText(text);
-            alert('Informações copiadas para a área de transferência!');
-        }
-    };
 
     const filteredProducts = products.filter(p => {
         const matchesSearch = p.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -276,13 +258,6 @@ const Produtos = () => {
                                     <td className="px-6 py-4 text-right">
                                         <div className="flex justify-end gap-2 text-nowrap">
                                             <button
-                                                onClick={() => handleShare(product)}
-                                                className="p-2 text-slate-400 hover:text-white hover:bg-slate-700 rounded-lg transition-all"
-                                                title="Compartilhar"
-                                            >
-                                                <Share2 size={18} />
-                                            </button>
-                                            <button
                                                 onClick={() => {
                                                     setCurrentProduct(product);
                                                     setSku(product.sku);
@@ -355,12 +330,6 @@ const Produtos = () => {
                                         Histórico
                                     </button>
                                 </div>
-                                <button
-                                    onClick={() => handleShare(product)}
-                                    className="p-2.5 bg-blue-600/10 text-blue-400 rounded-lg border border-blue-500/20 active:scale-95 transition-all"
-                                >
-                                    <Share2 size={18} />
-                                </button>
                             </div>
                         </div>
                     ))}
