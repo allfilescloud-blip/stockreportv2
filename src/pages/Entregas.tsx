@@ -442,12 +442,18 @@ const Entregas = () => {
 
                         <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6">
                             <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
-                                <label className="block text-xs font-semibold text-slate-500 uppercase mb-2 ml-1">Observações do Relatório</label>
+                                <div className="flex justify-between items-center mb-2 ml-1">
+                                    <label className="block text-xs font-semibold text-slate-500 uppercase">Observações do Relatório</label>
+                                    <span className={`text-[10px] font-bold ${notes.length >= 45 ? 'text-amber-500' : 'text-slate-600'}`}>
+                                        {notes.length}/50
+                                    </span>
+                                </div>
                                 <textarea
                                     value={notes}
-                                    onChange={(e) => setNotes(e.target.value)}
-                                    placeholder="Ex: Nota fiscal #1234, entregador Fulano, material com avaria na caixa..."
-                                    className="w-full bg-slate-800 border border-slate-700 rounded-lg p-3 text-white text-sm focus:ring-2 focus:ring-purple-500 outline-none transition-all resize-none min-h-[80px]"
+                                    onChange={(e) => setNotes(e.target.value.slice(0, 50))}
+                                    maxLength={50}
+                                    placeholder="Ex: NF #1234, entregador Fulano..."
+                                    className="w-full bg-slate-800 border border-slate-700 rounded-lg p-3 text-white text-sm focus:ring-2 focus:ring-purple-500 outline-none transition-all resize-none min-h-[60px]"
                                 />
                             </div>
 
