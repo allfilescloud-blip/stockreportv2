@@ -13,13 +13,14 @@ import {
     where
 } from 'firebase/firestore';
 import { db } from '../db/firebase';
-import { Plus, Search, Edit2, History, X, Printer, Filter } from 'lucide-react';
+import { Plus, Search, Edit2, History, X, Printer, Filter, Info } from 'lucide-react';
 
 interface Product {
     id: string;
     sku: string;
     ean: string;
     description: string;
+    model?: string;
     status: 'active' | 'inactive';
     history: any[];
 }
@@ -35,6 +36,7 @@ const Produtos = () => {
     const [sku, setSku] = useState('');
     const [ean, setEan] = useState('');
     const [description, setDescription] = useState('');
+    const [model, setModel] = useState('');
     const [status, setStatus] = useState<'active' | 'inactive'>('active');
     const [error, setError] = useState<string | null>(null);
 
@@ -78,6 +80,7 @@ const Produtos = () => {
                 sku,
                 ean,
                 description,
+                model,
                 status,
                 updatedAt: serverTimestamp(),
                 history: arrayUnion(historyEntry)
@@ -87,6 +90,7 @@ const Produtos = () => {
                 sku,
                 ean,
                 description,
+                model,
                 status,
                 createdAt: serverTimestamp(),
                 updatedAt: serverTimestamp(),
@@ -100,6 +104,7 @@ const Produtos = () => {
         setSku('');
         setEan('');
         setDescription('');
+        setModel('');
         setStatus('active');
         setError(null);
         setCurrentProduct(null);
@@ -110,7 +115,8 @@ const Produtos = () => {
     const filteredProducts = products.filter(p => {
         const matchesSearch = p.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
             p.ean?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            p.description.toLowerCase().includes(searchTerm.toLowerCase());
+            p.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            p.model?.toLowerCase().includes(searchTerm.toLowerCase());
 
         const matchesStatus = statusFilter === 'all' || p.status === statusFilter;
 
@@ -257,12 +263,18 @@ const Produtos = () => {
                                     </td>
                                     <td className="px-6 py-4 text-right">
                                         <div className="flex justify-end gap-2 text-nowrap">
+                                            {product.model && (
+                                                <div className="p-2 text-blue-400" title={`Modelo: ${product.model}`}>
+                                                    <Info size={18} />
+                                                </div>
+                                            )}
                                             <button
                                                 onClick={() => {
                                                     setCurrentProduct(product);
                                                     setSku(product.sku);
                                                     setEan(product.ean || '');
                                                     setDescription(product.description);
+                                                    setModel(product.model || '');
                                                     setStatus(product.status);
                                                     setIsModalOpen(true);
                                                 }}
@@ -311,6 +323,7 @@ const Produtos = () => {
                                             setSku(product.sku);
                                             setEan(product.ean || '');
                                             setDescription(product.description);
+                                            setModel(product.model || '');
                                             setStatus(product.status);
                                             setIsModalOpen(true);
                                         }}
@@ -330,6 +343,11 @@ const Produtos = () => {
                                         Histórico
                                     </button>
                                 </div>
+                                {product.model && (
+                                    <div className="p-2 text-blue-400" title={`Modelo: ${product.model}`}>
+                                        <Info size={18} />
+                                    </div>
+                                )}
                             </div>
                         </div>
                     ))}
@@ -375,6 +393,15 @@ const Produtos = () => {
                                     onChange={(e) => setEan(e.target.value)}
                                     className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all"
                                     placeholder="Ex: 7891234567890"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-semibold text-slate-500 uppercase mb-2 ml-1">Modelo</label>
+                                <input
+                                    value={model}
+                                    onChange={(e) => setModel(e.target.value)}
+                                    className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                                    placeholder="Ex: iPhone 13 Pro"
                                 />
                             </div>
                             <div>
