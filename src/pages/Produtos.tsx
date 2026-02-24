@@ -13,7 +13,7 @@ import {
     where
 } from 'firebase/firestore';
 import { db } from '../db/firebase';
-import { Plus, Search, Edit2, History, X, Printer, Filter, Info, ScanBarcode, StopCircle } from 'lucide-react';
+import { Plus, Search, Edit2, History, X, Printer, Filter, Info, ScanBarcode, StopCircle, ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react';
 import { Html5Qrcode } from 'html5-qrcode';
 import { useRef } from 'react';
 
@@ -41,6 +41,8 @@ const Produtos = () => {
     const [model, setModel] = useState('');
     const [status, setStatus] = useState<'active' | 'inactive'>('active');
     const [error, setError] = useState<string | null>(null);
+    const [sortColumn, setSortColumn] = useState<'sku' | 'description'>('sku');
+    const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
     // Scanner states
     const [isScannerActive, setIsScannerActive] = useState(false);
@@ -192,6 +194,20 @@ const Produtos = () => {
         }
     };
 
+    const handleSort = (column: 'sku' | 'description') => {
+        if (sortColumn === column) {
+            setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+        } else {
+            setSortColumn(column);
+            setSortDirection('asc');
+        }
+    };
+
+    const getSortIcon = (column: 'sku' | 'description') => {
+        if (sortColumn !== column) return <ChevronsUpDown size={14} className="text-slate-500" />;
+        return sortDirection === 'asc' ? <ChevronUp size={14} className="text-blue-500" /> : <ChevronDown size={14} className="text-blue-500" />;
+    };
+
     const resetForm = () => {
         stopScanner();
         setSku('');
@@ -214,6 +230,13 @@ const Produtos = () => {
         const matchesStatus = statusFilter === 'all' || p.status === statusFilter;
 
         return matchesSearch && matchesStatus;
+    }).sort((a, b) => {
+        const valA = (a[sortColumn] || '').toLowerCase();
+        const valB = (b[sortColumn] || '').toLowerCase();
+
+        if (valA < valB) return sortDirection === 'asc' ? -1 : 1;
+        if (valA > valB) return sortDirection === 'asc' ? 1 : -1;
+        return 0;
     });
 
     const handlePrint = () => {
@@ -335,9 +358,25 @@ const Produtos = () => {
                     <table className="w-full text-left">
                         <thead>
                             <tr className="bg-slate-800/50 text-slate-400 text-sm">
-                                <th className="px-6 py-4 font-semibold text-nowrap">SKU</th>
+                                <th
+                                    className="px-6 py-4 font-semibold text-nowrap cursor-pointer hover:bg-slate-700/50 transition-colors group"
+                                    onClick={() => handleSort('sku')}
+                                >
+                                    <div className="flex items-center gap-2">
+                                        SKU
+                                        {getSortIcon('sku')}
+                                    </div>
+                                </th>
                                 <th className="px-6 py-4 font-semibold text-nowrap">EAN</th>
-                                <th className="px-6 py-4 font-semibold w-full">Descrição</th>
+                                <th
+                                    className="px-6 py-4 font-semibold w-full cursor-pointer hover:bg-slate-700/50 transition-colors group"
+                                    onClick={() => handleSort('description')}
+                                >
+                                    <div className="flex items-center gap-2">
+                                        Descrição
+                                        {getSortIcon('description')}
+                                    </div>
+                                </th>
                                 <th className="px-6 py-4 font-semibold">Status</th>
                                 <th className="px-6 py-4 font-semibold text-right">Ações</th>
                             </tr>
