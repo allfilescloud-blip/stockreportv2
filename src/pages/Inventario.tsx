@@ -327,7 +327,7 @@ const Inventario = () => {
                             </tr>
                         </thead>
                         <tbody>
-                            ${report.items.map(item => {
+                            ${[...report.items].sort((a, b) => a.sku.localeCompare(b.sku, undefined, { numeric: true, sensitivity: 'base' })).map(item => {
             const diff = item.currentCount - item.previousCount;
             return `
                                     <tr>
