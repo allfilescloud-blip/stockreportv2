@@ -39,12 +39,15 @@ const Inventario = () => {
     const [reports, setReports] = useState<Report[]>([]);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
+    const [allProducts, setAllProducts] = useState<any[]>([]);
     const [products, setProducts] = useState<any[]>([]);
     const [reportItems, setReportItems] = useState<ReportItem[]>([]);
     const [selectedProduct, setSelectedProduct] = useState<any>(null);
     const [quantity, setQuantity] = useState<number | string>('');
     const [currentReport, setCurrentReport] = useState<Report | null>(null);
     const [showConfirmModal, setShowConfirmModal] = useState(false);
+    const [missingSkus, setMissingSkus] = useState<ReportItem[]>([]);
+    const [showMissingModal, setShowMissingModal] = useState(false);
     const [duplicateItemIndex, setDuplicateItemIndex] = useState<number | null>(null);
     const [filterDate, setFilterDate] = useState('');
 
@@ -77,24 +80,27 @@ const Inventario = () => {
         return () => unsubscribe();
     }, [filterDate]);
 
-    const handleSearchProduct = async (term: string) => {
+    useEffect(() => {
+        const q = query(collection(db, 'products'), where('status', '==', 'active'));
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+            const prods = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            setAllProducts(prods);
+        });
+        return () => unsubscribe();
+    }, []);
+
+    const handleSearchProduct = (term: string) => {
         setSearchTerm(term);
-        if (term.length < 2) {
+        if (term.length < 1) {
             setProducts([]);
             return;
         }
-        const q = query(
-            collection(db, 'products'),
-            where('status', '==', 'active'),
-            limit(10)
-        );
-        const snapshot = await getDocs(q);
-        const results = snapshot.docs
-            .map(doc => ({ id: doc.id, ...doc.data() }))
-            .filter((p: any) =>
-                p.sku.toLowerCase().includes(term.toLowerCase()) ||
-                p.description.toLowerCase().includes(term.toLowerCase())
-            );
+
+        const results = allProducts.filter((p: any) =>
+            p.sku.toLowerCase().includes(term.toLowerCase()) ||
+            p.description.toLowerCase().includes(term.toLowerCase())
+        ).slice(0, 10);
+
         setProducts(results);
     };
 
@@ -155,30 +161,81 @@ const Inventario = () => {
         }
     };
 
-    const saveReport = async () => {
-        if (reportItems.length === 0) return;
+    const checkMissingItems = async () => {
+        // Apenas na criação de novo relatório
+        if (currentReport) {
+            await executeFinalSave(reportItems);
+            return;
+        }
+
+        // Buscar o último inventário
+        const lastReportQuery = query(
+            collection(db, 'reports'),
+            where('type', '==', 'inventory'),
+            orderBy('createdAt', 'desc'),
+            limit(1)
+        );
+        const lastReportSnap = await getDocs(lastReportQuery);
+
+        if (lastReportSnap.empty) {
+            await executeFinalSave(reportItems);
+            return;
+        }
+
+        const lastReport = lastReportSnap.docs[0].data() as Report;
+
+        // Identificar SKUs que tinham >0 no anterior e não estão no atual
+        const currentSkus = new Set(reportItems.map(i => i.sku));
+        const missing = lastReport.items.filter(item =>
+            item.currentCount > 0 && !currentSkus.has(item.sku)
+        );
+
+        if (missing.length > 0) {
+            setMissingSkus(missing);
+            setShowMissingModal(true);
+        } else {
+            await executeFinalSave(reportItems);
+        }
+    };
+
+    const handleSaveWithMissing = async (addMissing: boolean) => {
+        let itemsToSave = [...reportItems];
+        if (addMissing) {
+            const itemsWithZero = missingSkus.map(m => ({
+                ...m,
+                previousCount: m.currentCount,
+                currentCount: 0
+            }));
+            itemsToSave = [...itemsToSave, ...itemsWithZero];
+        }
+        setShowMissingModal(false);
+        await executeFinalSave(itemsToSave);
+    };
+
+    const executeFinalSave = async (itemsToSave: ReportItem[]) => {
+        if (itemsToSave.length === 0) return;
 
         let reportRef;
         if (currentReport) {
             reportRef = doc(db, 'reports', currentReport.id);
             await updateDoc(reportRef, {
-                items: reportItems,
-                totalItems: reportItems.length,
+                items: itemsToSave,
+                totalItems: itemsToSave.length,
                 updatedAt: serverTimestamp()
             });
         } else {
             const newDoc = await addDoc(collection(db, 'reports'), {
                 type: 'inventory',
-                items: reportItems,
-                totalItems: reportItems.length,
+                items: itemsToSave,
+                totalItems: itemsToSave.length,
                 createdAt: serverTimestamp(),
                 updatedAt: serverTimestamp()
             });
             reportRef = newDoc;
         }
 
-        // Atualizar histórico de cada produto (simplificado: registra a contagem final no salvamento)
-        for (const item of reportItems) {
+        // Atualizar histórico de cada produto
+        for (const item of itemsToSave) {
             const historyEntry = {
                 action: 'Inventário',
                 date: new Date().toISOString(),
@@ -195,6 +252,10 @@ const Inventario = () => {
         setIsModalOpen(false);
         setReportItems([]);
         setCurrentReport(null);
+    };
+
+    const saveReport = async () => {
+        await checkMissingItems();
     };
 
     const deleteReport = async (id: string) => {
@@ -672,6 +733,60 @@ const Inventario = () => {
                                     className="flex-1 bg-amber-600 hover:bg-amber-700 text-white font-bold py-3 rounded-xl transition-all shadow-lg active:scale-95"
                                 >
                                     Alterar
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {/* Modal de Itens Ausentes */}
+            {showMissingModal && (
+                <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md">
+                    <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
+                        <div className="p-6 border-b border-slate-800 bg-slate-900/50">
+                            <div className="w-12 h-12 bg-blue-500/10 text-blue-500 rounded-full flex items-center justify-center mb-4">
+                                <AlertTriangle size={24} />
+                            </div>
+                            <h2 className="text-xl font-bold text-white mb-2">Itens Ausentes Detectados</h2>
+                            <p className="text-slate-400 text-sm">
+                                Os seguintes SKUs tinham estoque no inventário anterior mas não foram bipados neste. Deseja adicioná-los com quantidade 0?
+                            </p>
+                        </div>
+
+                        <div className="flex-1 overflow-y-auto p-4 space-y-2 bg-slate-950/50">
+                            {missingSkus.map(item => (
+                                <div key={item.sku} className="p-3 bg-slate-800/50 rounded-lg border border-slate-700 flex justify-between items-center group">
+                                    <div>
+                                        <p className="font-mono text-blue-400 text-sm font-bold group-hover:text-blue-300 transition-colors">{item.sku}</p>
+                                        <p className="text-slate-500 text-[10px] truncate max-w-[250px]">{item.description}</p>
+                                    </div>
+                                    <div className="text-right">
+                                        <p className="text-slate-500 text-[8px] uppercase font-bold">Anterior</p>
+                                        <p className="font-bold text-slate-300">{item.currentCount}</p>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+
+                        <div className="p-6 bg-slate-900/50 border-t border-slate-800 flex flex-col gap-3">
+                            <button
+                                onClick={() => handleSaveWithMissing(true)}
+                                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl transition-all shadow-lg active:scale-95 text-sm"
+                            >
+                                Sim, zerar itens e finalizar
+                            </button>
+                            <div className="grid grid-cols-2 gap-3">
+                                <button
+                                    onClick={() => handleSaveWithMissing(false)}
+                                    className="bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold py-3 rounded-xl transition-all border border-slate-700 text-xs"
+                                >
+                                    Não, apenas finalizar
+                                </button>
+                                <button
+                                    onClick={() => setShowMissingModal(false)}
+                                    className="bg-transparent hover:bg-slate-800/50 text-slate-500 hover:text-white py-3 font-semibold transition-all text-xs"
+                                >
+                                    Revisar
                                 </button>
                             </div>
                         </div>
