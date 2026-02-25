@@ -251,7 +251,7 @@ const Produtos = () => {
                         body { font-family: sans-serif; padding: 20px; }
                         table { width: 100%; border-collapse: collapse; margin-top: 20px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
                         th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
-                        th { background-color: #f4f4f4 !important; }
+                        th { background-color: #e2e8f0 !important; }
                         tbody tr:nth-child(even) { background-color: #f2f2f2 !important; }
                         h1 { color: #333; }
                         .status { font-size: 0.8em; font-weight: bold; padding: 4px 8px; border-radius: 4px; }

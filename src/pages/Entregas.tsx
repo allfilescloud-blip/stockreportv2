@@ -218,7 +218,7 @@ const Entregas = () => {
                         body { font-family: sans-serif; padding: 20px; color: #333; }
                         table { width: 100%; border-collapse: collapse; margin-top: 20px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
                         th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
-                        th { background-color: #f8fafc !important; }
+                        th { background-color: #e2e8f0 !important; }
                         tbody tr:nth-child(even) { background-color: #f2f2f2 !important; }
                         .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #333; padding-bottom: 10px; }
                     </style>
