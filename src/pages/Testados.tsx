@@ -226,6 +226,7 @@ const Testados = () => {
                         table { width: 100%; border-collapse: collapse; margin-top: 20px; }
                         th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
                         th { background-color: #f8fafc; }
+                        tbody tr:nth-child(even) { background-color: #f9fafb; }
                         .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #333; padding-bottom: 10px; }
                         .diff-pos { color: green; font-weight: bold; }
                         .diff-neg { color: red; font-weight: bold; }
