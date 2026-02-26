@@ -685,7 +685,11 @@ const Testados = () => {
                                                             <Calculator size={18} />
                                                         </button>
                                                         <button
-                                                            onClick={() => setReportItems(reportItems.filter((_, i) => i !== originalIndex))}
+                                                            onClick={() => {
+                                                                if (window.confirm('Remover este item do teste?')) {
+                                                                    setReportItems(reportItems.filter((_, i) => i !== originalIndex));
+                                                                }
+                                                            }}
                                                             className="p-3 bg-red-400/10 text-red-500 rounded-lg active:scale-95 transition-all"
                                                         >
                                                             <Trash2 size={18} />

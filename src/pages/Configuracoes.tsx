@@ -76,6 +76,7 @@ const Configuracoes = () => {
     };
 
     const handleReject = async (userId: string) => {
+        if (!window.confirm('Tem certeza que deseja excluir este pedido de acesso?')) return;
         setLoadingAction(userId);
         try {
             await deleteDoc(doc(db, 'users', userId));
