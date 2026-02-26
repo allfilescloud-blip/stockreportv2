@@ -16,6 +16,8 @@ import {
 import { db } from '../db/firebase';
 import { Search, Plus, Printer, Trash2, Edit2, X, AlertTriangle, Share2, ClipboardList, Calculator } from 'lucide-react';
 import { deleteDoc } from 'firebase/firestore';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 interface ReportItem {
     productId: string;
@@ -283,19 +285,68 @@ const Inventario = () => {
     const handleShare = async (report: Report) => {
         const sequentialId = reports.length - reports.findIndex(r => r.id === report.id);
         const dateText = report.createdAt?.toDate ? report.createdAt.toDate().toLocaleString('pt-BR') : 'Processando...';
-        const text = `📊 *Relatório de Inventário #${sequentialId}*\n📅 *Data:* ${dateText}\n📝 *Itens:* ${report.totalItems}\n👤 *Usuário:* ${report.userName || 'N/A'}`;
 
-        if (navigator.share) {
+        // Criar PDF
+        const doc = new jsPDF();
+
+        // Cabeçalho do PDF
+        doc.setFontSize(20);
+        doc.text(`Inventário #${sequentialId}`, 15, 20);
+        doc.setFontSize(10);
+        doc.text(`Data: ${dateText}`, 15, 30);
+        doc.text(`Total de Itens: ${report.totalItems}`, 150, 30);
+        doc.line(15, 35, 195, 35);
+
+        // Tabela de itens
+        const tableData = [...report.items]
+            .sort((a, b) => a.sku.localeCompare(b.sku, undefined, { numeric: true, sensitivity: 'base' }))
+            .map(item => {
+                const diff = item.currentCount - item.previousCount;
+                return [
+                    item.sku,
+                    item.description,
+                    item.previousCount.toString(),
+                    item.currentCount.toString(),
+                    diff > 0 ? `+${diff}` : diff.toString()
+                ];
+            });
+
+        autoTable(doc, {
+            startY: 40,
+            head: [['SKU', 'Descrição', 'Anterior', 'Atual', 'Diferença']],
+            body: tableData,
+            headStyles: { fillColor: [226, 232, 240], textColor: [51, 65, 85] },
+            alternateRowStyles: { fillColor: [241, 245, 249] },
+        });
+
+        const pdfBlob = doc.output('blob');
+        const pdfFile = new File([pdfBlob], `inventario_${sequentialId}.pdf`, { type: 'application/pdf' });
+
+        const shareText = `📊 *Relatório de Inventário #${sequentialId}*\n📅 *Data:* ${dateText}\n📝 *Itens:* ${report.totalItems}`;
+
+        if (navigator.share && navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
+            try {
+                await navigator.share({
+                    files: [pdfFile],
+                    title: `Inventário #${sequentialId}`,
+                    text: shareText
+                });
+            } catch (error) {
+                if ((error as any).name !== 'AbortError') {
+                    console.error('Erro ao compartilhar:', error);
+                }
+            }
+        } else if (navigator.share) {
             try {
                 await navigator.share({
                     title: `Inventário #${sequentialId}`,
-                    text: text
+                    text: shareText
                 });
             } catch (error) {
-                console.error('Erro ao compartilhar:', error);
+                console.error('Erro ao compartilhar texto:', error);
             }
         } else {
-            navigator.clipboard.writeText(text);
+            navigator.clipboard.writeText(shareText);
             alert('Informações copiadas para a área de transferência!');
         }
     };
@@ -429,13 +480,6 @@ const Inventario = () => {
                                         </td>
                                         <td className="px-6 py-4 text-right">
                                             <div className="flex justify-end gap-2 text-nowrap">
-                                                <button
-                                                    onClick={() => handleShare(report)}
-                                                    className="p-2 text-slate-400 hover:text-white hover:bg-slate-700 rounded-lg transition-all"
-                                                    title="Compartilhar"
-                                                >
-                                                    <Share2 size={18} />
-                                                </button>
                                                 <button
                                                     onClick={() => {
                                                         setCurrentReport(report);

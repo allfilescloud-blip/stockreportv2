@@ -13,7 +13,9 @@ import {
     where
 } from 'firebase/firestore';
 import { db } from '../db/firebase';
-import { Plus, Search, Edit2, History, X, Printer, Filter, Info, ScanBarcode, StopCircle, ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react';
+import { Plus, Search, Edit2, History, X, Printer, Filter, Info, ScanBarcode, StopCircle, ChevronUp, ChevronDown, ChevronsUpDown, Share2 } from 'lucide-react';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import { Html5Qrcode } from 'html5-qrcode';
 import { useRef } from 'react';
 
@@ -45,7 +47,7 @@ const Produtos = () => {
     const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
     // Scanner states
-    const [isScannerActive, setIsScannerActive] = useState(false);
+    const [activeScanner, setActiveScanner] = useState<'ean' | 'model' | null>(null);
     const html5QrCodeRef = useRef<Html5Qrcode | null>(null);
 
     useEffect(() => {
@@ -127,20 +129,20 @@ const Produtos = () => {
         }
     };
 
-    const startScanner = async () => {
-        if (isScannerActive) return;
+    const startScanner = async (target: 'ean' | 'model') => {
+        if (activeScanner) return;
 
         // Activate scanner state FIRST so the element is rendered in DOM
-        setIsScannerActive(true);
+        setActiveScanner(target);
 
         setTimeout(async () => {
             try {
-                const elementId = "product-model-reader";
+                const elementId = `product-${target}-reader`;
                 const element = document.getElementById(elementId);
 
                 if (!element) {
                     console.error("Elemento do scanner não encontrado no DOM");
-                    setIsScannerActive(false);
+                    setActiveScanner(null);
                     return;
                 }
 
@@ -163,7 +165,9 @@ const Produtos = () => {
                             qrbox: { width: 250, height: 150 },
                         },
                         (decodedText) => {
-                            setModel(decodedText);
+                            if (target === 'ean') setEan(decodedText);
+                            else setModel(decodedText);
+
                             playSound('success');
                             stopScanner();
                         },
@@ -171,11 +175,11 @@ const Produtos = () => {
                     );
                 } else {
                     console.error("Nenhuma câmera encontrada");
-                    setIsScannerActive(false);
+                    setActiveScanner(null);
                 }
             } catch (err) {
                 console.error("Erro ao iniciar scanner:", err);
-                setIsScannerActive(false);
+                setActiveScanner(null);
             }
         }, 150); // Small delay to ensure React finish rendering the element
     };
@@ -189,7 +193,7 @@ const Produtos = () => {
                 console.warn("Erro ao parar scanner:", err);
             } finally {
                 html5QrCodeRef.current = null;
-                setIsScannerActive(false);
+                setActiveScanner(null);
             }
         }
     };
@@ -239,60 +243,65 @@ const Produtos = () => {
             : valB.localeCompare(valA, undefined, { numeric: true, sensitivity: 'base' });
     });
 
-    const handlePrint = () => {
-        const printWindow = window.open('', '_blank');
-        if (!printWindow) return;
+    const handleShare = async () => {
+        const dateText = new Date().toLocaleString('pt-BR');
 
-        const html = `
-            <html>
-                <head>
-                    <title>Relatório de Produtos</title>
-                    <style>
-                        body { font-family: sans-serif; padding: 20px; }
-                        table { width: 100%; border-collapse: collapse; margin-top: 20px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-                        th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
-                        th { background-color: #e2e8f0 !important; }
-                        tbody tr:nth-child(even) { background-color: #f2f2f2 !important; }
-                        h1 { color: #333; }
-                        .status { font-size: 0.8em; font-weight: bold; padding: 4px 8px; border-radius: 4px; }
-                        .active { background-color: #dcfce7; color: #166534; }
-                        .inactive { background-color: #fee2e2; color: #991b1b; }
-                    </style>
-                </head>
-                <body>
-                    <h1>Relatório de Produtos - ${statusFilter.charAt(0).toUpperCase() + statusFilter.slice(1)}</h1>
-                    <p>Data: ${new Date().toLocaleString('pt-BR')}</p>
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>SKU</th>
-                                <th>EAN</th>
-                                <th>Descrição</th>
-                                <th>Status</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${filteredProducts.map(p => `
-                                <tr>
-                                    <td>${p.sku}</td>
-                                    <td>${p.ean || '-'}</td>
-                                    <td>${p.description}</td>
-                                    <td>
-                                        <span class="status ${p.status}">
-                                            ${p.status === 'active' ? 'Ativo' : 'Inativo'}
-                                        </span>
-                                    </td>
-                                </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
-                    <script>window.print();</script>
-                </body>
-            </html>
-        `;
+        const doc = new jsPDF();
 
-        printWindow.document.write(html);
-        printWindow.document.close();
+        doc.setFontSize(20);
+        doc.text(`Catálogo de Produtos`, 15, 20);
+        doc.setFontSize(10);
+        doc.text(`Data: ${dateText}`, 15, 30);
+        doc.text(`Filtro: ${statusFilter === 'all' ? 'Todos' : statusFilter === 'active' ? 'Ativos' : 'Inativos'}`, 15, 35);
+        doc.text(`Total: ${filteredProducts.length}`, 150, 30);
+        doc.line(15, 38, 195, 38);
+
+        const tableData = [...filteredProducts].map(p => [
+            p.sku,
+            p.ean || '-',
+            p.description,
+            p.model || '-',
+            p.status === 'active' ? 'Ativo' : 'Inativo'
+        ]);
+
+        autoTable(doc, {
+            startY: 43,
+            head: [['SKU', 'EAN', 'Descrição', 'Modelo', 'Status']],
+            body: tableData,
+            headStyles: { fillColor: [226, 232, 240], textColor: [51, 65, 85] },
+            alternateRowStyles: { fillColor: [241, 245, 249] },
+        });
+
+        const pdfBlob = doc.output('blob');
+        const pdfFile = new File([pdfBlob], `produtos_${new Date().getTime()}.pdf`, { type: 'application/pdf' });
+
+        const shareText = `📊 *Catálogo de Produtos*\n📅 *Data:* ${dateText}\n📝 *Itens:* ${filteredProducts.length}`;
+
+        if (navigator.share && navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
+            try {
+                await navigator.share({
+                    files: [pdfFile],
+                    title: `Catálogo de Produtos`,
+                    text: shareText
+                });
+            } catch (error) {
+                if ((error as any).name !== 'AbortError') {
+                    console.error('Erro ao compartilhar:', error);
+                }
+            }
+        } else if (navigator.share) {
+            try {
+                await navigator.share({
+                    title: `Catálogo de Produtos`,
+                    text: shareText
+                });
+            } catch (error) {
+                console.error('Erro ao compartilhar texto:', error);
+            }
+        } else {
+            navigator.clipboard.writeText(shareText);
+            alert('Resumo copiado para a área de transferência!');
+        }
     };
 
     return (
@@ -307,20 +316,83 @@ const Produtos = () => {
                         <span className="text-slate-500">Inativos: <span className="text-red-500">{products.filter(p => p.status === 'inactive').length}</span></span>
                     </div>
                 </div>
-                <div className="flex flex-wrap gap-4">
-                    <button
-                        onClick={handlePrint}
-                        className="flex items-center justify-center space-x-2 bg-slate-800 hover:bg-slate-700 text-white px-6 py-3 rounded-xl transition-all border border-slate-700"
-                    >
-                        <Printer size={20} />
-                        <span>Imprimir</span>
-                    </button>
+                <div className="flex items-center gap-3">
                     <button
                         onClick={() => setIsModalOpen(true)}
-                        className="flex items-center justify-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl transition-all shadow-lg shadow-blue-900/20"
+                        className="flex items-center justify-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl transition-all shadow-lg shadow-blue-900/20 font-bold"
                     >
                         <Plus size={20} />
                         <span>Novo Produto</span>
+                    </button>
+                    {/* Botão de Impressão (Desktop) */}
+                    <button
+                        onClick={() => {
+                            const printWindow = window.open('', '_blank');
+                            if (!printWindow) return;
+                            const html = `
+                                <html>
+                                    <head>
+                                        <title>Relatório de Produtos</title>
+                                        <style>
+                                            body { font-family: sans-serif; padding: 20px; }
+                                            table { width: 100%; border-collapse: collapse; margin-top: 20px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+                                            th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
+                                            th { background-color: #e2e8f0 !important; }
+                                            tbody tr:nth-child(even) { background-color: #f2f2f2 !important; }
+                                            h1 { color: #333; }
+                                            .status { font-size: 0.8em; font-weight: bold; padding: 4px 8px; border-radius: 4px; }
+                                            .active { background-color: #dcfce7; color: #166534; }
+                                            .inactive { background-color: #fee2e2; color: #991b1b; }
+                                        </style>
+                                    </head>
+                                    <body>
+                                        <h1>Relatório de Produtos - ${statusFilter.charAt(0).toUpperCase() + statusFilter.slice(1)}</h1>
+                                        <p>Data: ${new Date().toLocaleString('pt-BR')}</p>
+                                        <table>
+                                            <thead>
+                                                <tr>
+                                                    <th>SKU</th>
+                                                    <th>EAN</th>
+                                                    <th>Descrição</th>
+                                                    <th>Modelo</th>
+                                                    <th>Status</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                ${filteredProducts.map(p => `
+                                                    <tr>
+                                                        <td>${p.sku}</td>
+                                                        <td>${p.ean || '-'}</td>
+                                                        <td>${p.description}</td>
+                                                        <td>${p.model || '-'}</td>
+                                                        <td>
+                                                            <span class="status ${p.status}">
+                                                                ${p.status === 'active' ? 'Ativo' : 'Inativo'}
+                                                            </span>
+                                                        </td>
+                                                    </tr>
+                                                `).join('')}
+                                            </tbody>
+                                        </table>
+                                        <script>window.print();</script>
+                                    </body>
+                                </html>
+                            `;
+                            printWindow.document.write(html);
+                            printWindow.document.close();
+                        }}
+                        className="hidden md:flex p-3 bg-slate-800 hover:bg-slate-700 text-white rounded-xl transition-all border border-slate-700 shadow-lg"
+                        title="Imprimir"
+                    >
+                        <Printer size={20} />
+                    </button>
+                    {/* Botão de Compartilhamento (Mobile) */}
+                    <button
+                        onClick={handleShare}
+                        className="md:hidden p-3 bg-blue-600/10 text-blue-400 rounded-xl border border-blue-500/20 active:scale-95 transition-all"
+                        title="Compartilhar PDF"
+                    >
+                        <Share2 size={20} />
                     </button>
                 </div>
             </div>
@@ -535,12 +607,33 @@ const Produtos = () => {
                             </div>
                             <div>
                                 <label className="block text-xs font-semibold text-slate-500 uppercase mb-2 ml-1">EAN (Código de Barras)</label>
-                                <input
-                                    value={ean}
-                                    onChange={(e) => setEan(e.target.value)}
-                                    className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-                                    placeholder="Ex: 7891234567890"
-                                />
+                                <div className="flex gap-2">
+                                    <input
+                                        value={ean}
+                                        onChange={(e) => setEan(e.target.value)}
+                                        className="flex-1 px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                                        placeholder="Ex: 7891234567890"
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={activeScanner === 'ean' ? stopScanner : () => startScanner('ean')}
+                                        className={`p-3 rounded-lg border transition-all active:scale-95 ${activeScanner === 'ean'
+                                            ? 'bg-red-500/10 border-red-500 text-red-500 animate-pulse'
+                                            : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white hover:bg-slate-700'
+                                            }`}
+                                        title={activeScanner === 'ean' ? "Parar Leitura" : "Escanear EAN"}
+                                    >
+                                        {activeScanner === 'ean' ? <StopCircle size={24} /> : <ScanBarcode size={24} />}
+                                    </button>
+                                </div>
+                                {activeScanner === 'ean' && (
+                                    <div className="mt-4 overflow-hidden rounded-xl bg-black border border-blue-500/30">
+                                        <div id="product-ean-reader" className="w-full"></div>
+                                        <div className="bg-slate-900/80 py-2 text-center text-[10px] text-blue-400 font-bold uppercase tracking-widest">
+                                            Aponte para o código
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                             <div>
                                 <label className="block text-xs font-semibold text-slate-500 uppercase mb-2 ml-1">Descrição</label>
@@ -563,18 +656,18 @@ const Produtos = () => {
                                     />
                                     <button
                                         type="button"
-                                        onClick={isScannerActive ? stopScanner : startScanner}
-                                        className={`p-3 rounded-lg border transition-all active:scale-95 ${isScannerActive
+                                        onClick={activeScanner === 'model' ? stopScanner : () => startScanner('model')}
+                                        className={`p-3 rounded-lg border transition-all active:scale-95 ${activeScanner === 'model'
                                             ? 'bg-red-500/10 border-red-500 text-red-500 animate-pulse'
                                             : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white hover:bg-slate-700'
                                             }`}
-                                        title={isScannerActive ? "Parar Leitura" : "Escanear Modelo"}
+                                        title={activeScanner === 'model' ? "Parar Leitura" : "Escanear Modelo"}
                                     >
-                                        {isScannerActive ? <StopCircle size={24} /> : <ScanBarcode size={24} />}
+                                        {activeScanner === 'model' ? <StopCircle size={24} /> : <ScanBarcode size={24} />}
                                     </button>
                                 </div>
 
-                                {isScannerActive && (
+                                {activeScanner === 'model' && (
                                     <div className="mt-4 overflow-hidden rounded-xl bg-black border border-blue-500/30">
                                         <div id="product-model-reader" className="w-full"></div>
                                         <div className="bg-slate-900/80 py-2 text-center text-[10px] text-blue-400 font-bold uppercase tracking-widest">
@@ -601,32 +694,34 @@ const Produtos = () => {
                                 </button>
                             </div>
                         </form>
-                    </div>
-                </div>
+                    </div >
+                </div >
             )}
 
             {/* Modal Histórico */}
-            {isHistoryOpen && currentProduct && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-                    <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl">
-                        <div className="p-6 border-b border-slate-800 flex justify-between items-center bg-slate-800/50">
-                            <h2 className="text-xl font-bold text-white">Histórico: {currentProduct.sku}</h2>
-                            <button onClick={() => setIsHistoryOpen(false)} className="text-slate-400 hover:text-white">
-                                <X size={24} />
-                            </button>
-                        </div>
-                        <div className="p-6 max-h-[60vh] overflow-y-auto space-y-4">
-                            {currentProduct.history?.slice().reverse().map((entry, idx) => (
-                                <div key={idx} className="border-l-2 border-blue-500 pl-4 py-1">
-                                    <p className="text-xs text-slate-500">{new Date(entry.date).toLocaleString('pt-BR')}</p>
-                                    <p className="text-white font-medium">{entry.action}</p>
-                                    <p className="text-sm text-slate-400">{entry.details}</p>
-                                </div>
-                            ))}
+            {
+                isHistoryOpen && currentProduct && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+                        <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl">
+                            <div className="p-6 border-b border-slate-800 flex justify-between items-center bg-slate-800/50">
+                                <h2 className="text-xl font-bold text-white">Histórico: {currentProduct.sku}</h2>
+                                <button onClick={() => setIsHistoryOpen(false)} className="text-slate-400 hover:text-white">
+                                    <X size={24} />
+                                </button>
+                            </div>
+                            <div className="p-6 max-h-[60vh] overflow-y-auto space-y-4">
+                                {currentProduct.history?.slice().reverse().map((entry, idx) => (
+                                    <div key={idx} className="border-l-2 border-blue-500 pl-4 py-1">
+                                        <p className="text-xs text-slate-500">{new Date(entry.date).toLocaleString('pt-BR')}</p>
+                                        <p className="text-white font-medium">{entry.action}</p>
+                                        <p className="text-sm text-slate-400">{entry.details}</p>
+                                    </div>
+                                ))}
+                            </div>
                         </div>
                     </div>
-                </div>
-            )}
+                )
+            }
         </div>
     );
 };

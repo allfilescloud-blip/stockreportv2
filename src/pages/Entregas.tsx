@@ -14,6 +14,8 @@ import {
 } from 'firebase/firestore';
 import { db } from '../db/firebase';
 import { Search, Plus, Printer, Trash2, Edit2, X, AlertTriangle, Share2, ClipboardList, Eye, Calculator } from 'lucide-react';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 interface ReportItem {
     productId: string;
@@ -198,23 +200,76 @@ const Entregas = () => {
     const handleShare = async (report: Report) => {
         const sequentialId = reports.length - reports.findIndex(r => r.id === report.id);
         const dateText = report.createdAt?.toDate ? report.createdAt.toDate().toLocaleString('pt-BR') : 'Processando...';
-        let text = `📊 *Registro de Entrega #${sequentialId}*\n📅 *Data:* ${dateText}\n📝 *Itens:* ${report.totalItems}\n👤 *Usuário:* ${report.userName || 'N/A'}`;
+
+        // Criar PDF
+        const doc = new jsPDF();
+
+        // Cabeçalho do PDF
+        doc.setFontSize(20);
+        doc.text(`Registro de Entrega #${sequentialId}`, 15, 20);
+        doc.setFontSize(10);
+        doc.text(`Data: ${dateText}`, 15, 30);
+        doc.text(`Total de Itens: ${report.totalItems}`, 150, 30);
+        doc.line(15, 35, 195, 35);
 
         if (report.notes) {
-            text += `\n\n📝 *Observações:* ${report.notes}`;
+            doc.setFontSize(10);
+            doc.setFont('helvetica', 'bold');
+            doc.text('Observações:', 15, 42);
+            doc.setFont('helvetica', 'normal');
+            const splitNotes = doc.splitTextToSize(report.notes, 180);
+            doc.text(splitNotes, 15, 47);
+            doc.line(15, 47 + (splitNotes.length * 5), 195, 47 + (splitNotes.length * 5));
         }
 
-        if (navigator.share) {
+        // Tabela de itens
+        const tableData = [...report.items]
+            .sort((a, b) => a.sku.localeCompare(b.sku, undefined, { numeric: true, sensitivity: 'base' }))
+            .map(item => [
+                item.sku,
+                item.description,
+                item.currentCount.toString()
+            ]);
+
+        autoTable(doc, {
+            startY: report.notes ? 55 + (doc.splitTextToSize(report.notes, 180).length * 5) : 40,
+            head: [['SKU', 'Descrição', 'Quantidade']],
+            body: tableData,
+            headStyles: { fillColor: [226, 232, 240], textColor: [51, 65, 85] },
+            alternateRowStyles: { fillColor: [241, 245, 249] },
+        });
+
+        const pdfBlob = doc.output('blob');
+        const pdfFile = new File([pdfBlob], `entrega_${sequentialId}.pdf`, { type: 'application/pdf' });
+
+        let shareText = `📊 *Registro de Entrega #${sequentialId}*\n📅 *Data:* ${dateText}\n📝 *Itens:* ${report.totalItems}`;
+        if (report.notes) {
+            shareText += `\n\n📝 *Observações:* ${report.notes}`;
+        }
+
+        if (navigator.share && navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
+            try {
+                await navigator.share({
+                    files: [pdfFile],
+                    title: `Entrega #${sequentialId}`,
+                    text: shareText
+                });
+            } catch (error) {
+                if ((error as any).name !== 'AbortError') {
+                    console.error('Erro ao compartilhar:', error);
+                }
+            }
+        } else if (navigator.share) {
             try {
                 await navigator.share({
                     title: `Entrega #${sequentialId}`,
-                    text: text
+                    text: shareText
                 });
             } catch (error) {
-                console.error('Erro ao compartilhar:', error);
+                console.error('Erro ao compartilhar texto:', error);
             }
         } else {
-            navigator.clipboard.writeText(text);
+            navigator.clipboard.writeText(shareText);
             alert('Informações copiadas para a área de transferência!');
         }
     };
@@ -343,13 +398,6 @@ const Entregas = () => {
                                                         <Eye size={18} />
                                                     </div>
                                                 )}
-                                                <button
-                                                    onClick={() => handleShare(report)}
-                                                    className="p-2 text-slate-400 hover:text-white hover:bg-slate-700 rounded-lg transition-all"
-                                                    title="Compartilhar"
-                                                >
-                                                    <Share2 size={18} />
-                                                </button>
                                                 <button
                                                     onClick={() => {
                                                         setCurrentReport(report);
