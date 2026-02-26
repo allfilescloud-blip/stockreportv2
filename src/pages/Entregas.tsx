@@ -13,7 +13,7 @@ import {
     deleteDoc
 } from 'firebase/firestore';
 import { db } from '../db/firebase';
-import { Search, Plus, Printer, Trash2, Edit2, X, AlertTriangle, Share2, ClipboardList, Eye } from 'lucide-react';
+import { Search, Plus, Printer, Trash2, Edit2, X, AlertTriangle, Share2, ClipboardList, Eye, Calculator } from 'lucide-react';
 
 interface ReportItem {
     productId: string;
@@ -46,9 +46,12 @@ const Entregas = () => {
     const [duplicateItemIndex, setDuplicateItemIndex] = useState<number | null>(null);
     const [filterDate, setFilterDate] = useState('');
     const [notes, setNotes] = useState('');
+    const [summingIndex, setSummingIndex] = useState<number | null>(null);
+    const [sumValue, setSumValue] = useState<number | string>('');
 
     const skuInputRef = useRef<HTMLInputElement>(null);
     const quantityInputRef = useRef<HTMLInputElement>(null);
+    const sumInputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
         const q = query(
@@ -115,6 +118,16 @@ const Entregas = () => {
         setQuantity('');
         setProducts([]);
         skuInputRef.current?.focus();
+    };
+
+    const handleSum = () => {
+        if (summingIndex !== null && sumValue !== '') {
+            const updatedItems = [...reportItems];
+            updatedItems[summingIndex].currentCount += Number(sumValue);
+            setReportItems(updatedItems);
+            setSummingIndex(null);
+            setSumValue('');
+        }
     };
 
     const confirmUpdate = () => {
@@ -467,8 +480,16 @@ const Entregas = () => {
                                             readOnly={!!selectedProduct}
                                             placeholder="Inserir SKU"
                                         />
-                                        {selectedProduct && (
-                                            <button onClick={() => setSelectedProduct(null)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white">
+                                        {(selectedProduct || searchTerm) && (
+                                            <button
+                                                onClick={() => {
+                                                    setSelectedProduct(null);
+                                                    setSearchTerm('');
+                                                    setProducts([]);
+                                                    skuInputRef.current?.focus();
+                                                }}
+                                                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
+                                            >
                                                 <X size={18} />
                                             </button>
                                         )}
@@ -544,20 +565,40 @@ const Entregas = () => {
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-800 bg-slate-900/30">
-                                            {reportItems.map((item, idx) => (
-                                                <tr key={idx} className="hover:bg-slate-800/10 transition-colors">
-                                                    <td className="px-6 py-4">
-                                                        <p className="font-mono text-purple-400">{item.sku}</p>
-                                                        <p className="text-slate-500 text-xs truncate max-w-[150px] md:max-w-[300px]">{item.description}</p>
-                                                    </td>
-                                                    <td className="px-6 py-4 text-center font-bold text-white">{item.currentCount}</td>
-                                                    <td className="px-6 py-4 text-right">
-                                                        <button onClick={() => setReportItems(reportItems.filter((_, i) => i !== idx))} className="text-slate-600 hover:text-red-400 p-2 transition-colors">
-                                                            <Trash2 size={18} />
-                                                        </button>
-                                                    </td>
-                                                </tr>
-                                            ))}
+                                            {reportItems
+                                                .filter(i =>
+                                                    i.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                                                    i.description.toLowerCase().includes(searchTerm.toLowerCase())
+                                                )
+                                                .map((item, idx) => {
+                                                    const originalIndex = reportItems.findIndex(ri => ri === item);
+                                                    return (
+                                                        <tr key={idx} className="hover:bg-slate-800/10 transition-colors">
+                                                            <td className="px-6 py-4">
+                                                                <p className="font-mono text-purple-400">{item.sku}</p>
+                                                                <p className="text-slate-500 text-xs truncate max-w-[150px] md:max-w-[300px]">{item.description}</p>
+                                                            </td>
+                                                            <td className="px-6 py-4 text-center font-bold text-white">{item.currentCount}</td>
+                                                            <td className="px-6 py-4 text-right">
+                                                                <div className="flex justify-end gap-2">
+                                                                    <button
+                                                                        onClick={() => {
+                                                                            setSummingIndex(originalIndex);
+                                                                            setSumValue('');
+                                                                        }}
+                                                                        className="text-emerald-500 hover:text-emerald-400 p-2 transition-colors"
+                                                                        title="Somar Quantidade"
+                                                                    >
+                                                                        <Calculator size={18} />
+                                                                    </button>
+                                                                    <button onClick={() => setReportItems(reportItems.filter((_, i) => i !== originalIndex))} className="text-slate-600 hover:text-red-400 p-2 transition-colors">
+                                                                        <Trash2 size={18} />
+                                                                    </button>
+                                                                </div>
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                })}
                                             {reportItems.length === 0 && (
                                                 <tr>
                                                     <td colSpan={3} className="px-6 py-8 text-center text-slate-500 italic">Adicione produtos para iniciar o registro</td>
@@ -569,23 +610,42 @@ const Entregas = () => {
 
                                 {/* Mobile View dos itens no modal */}
                                 <div className="md:hidden space-y-3">
-                                    {reportItems.map((item, idx) => (
-                                        <div key={idx} className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex justify-between items-center shadow-sm">
-                                            <div className="flex-1 min-w-0 pr-4">
-                                                <p className="font-mono text-purple-400 font-bold text-sm truncate">{item.sku}</p>
-                                                <p className="text-slate-500 text-[10px] truncate">{item.description}</p>
-                                                <div className="mt-2 text-white font-bold text-sm">
-                                                    Qtd: {item.currentCount}
+                                    {reportItems
+                                        .filter(i =>
+                                            i.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                                            i.description.toLowerCase().includes(searchTerm.toLowerCase())
+                                        )
+                                        .map((item, idx) => {
+                                            const originalIndex = reportItems.findIndex(ri => ri === item);
+                                            return (
+                                                <div key={idx} className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex justify-between items-center shadow-sm">
+                                                    <div className="flex-1 min-w-0 pr-4">
+                                                        <p className="font-mono text-purple-400 font-bold text-sm truncate">{item.sku}</p>
+                                                        <p className="text-slate-500 text-[10px] truncate">{item.description}</p>
+                                                        <div className="mt-2 text-white font-bold text-sm">
+                                                            Qtd: {item.currentCount}
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex flex-col gap-2">
+                                                        <button
+                                                            onClick={() => {
+                                                                setSummingIndex(originalIndex);
+                                                                setSumValue('');
+                                                            }}
+                                                            className="p-3 bg-emerald-500/10 text-emerald-500 rounded-lg active:scale-95 transition-all"
+                                                        >
+                                                            <Calculator size={18} />
+                                                        </button>
+                                                        <button
+                                                            onClick={() => setReportItems(reportItems.filter((_, i) => i !== originalIndex))}
+                                                            className="p-3 bg-red-400/10 text-red-500 rounded-lg active:scale-95 transition-all"
+                                                        >
+                                                            <Trash2 size={18} />
+                                                        </button>
+                                                    </div>
                                                 </div>
-                                            </div>
-                                            <button
-                                                onClick={() => setReportItems(reportItems.filter((_, i) => i !== idx))}
-                                                className="p-3 bg-red-400/10 text-red-500 rounded-lg active:scale-95 transition-all"
-                                            >
-                                                <Trash2 size={18} />
-                                            </button>
-                                        </div>
-                                    ))}
+                                            );
+                                        })}
                                     {reportItems.length === 0 && (
                                         <div className="py-8 text-center text-slate-500 italic text-sm border-2 border-dashed border-slate-800 rounded-xl">
                                             Nenhum item adicionado
@@ -630,6 +690,53 @@ const Entregas = () => {
                                     className="flex-1 bg-amber-600 hover:bg-amber-700 text-white font-bold py-3 rounded-xl transition-all shadow-lg active:scale-95"
                                 >
                                     Alterar
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Modal de Soma */}
+            {summingIndex !== null && (
+                <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+                    <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl animate-in fade-in zoom-in duration-200">
+                        <div className="p-6 text-center">
+                            <div className="w-16 h-16 bg-emerald-500/10 text-emerald-500 rounded-full flex items-center justify-center mx-auto mb-4">
+                                <Calculator size={32} />
+                            </div>
+                            <h2 className="text-xl font-bold text-white mb-2">Somar Quantidade</h2>
+                            <p className="text-slate-400 mb-6 text-sm">
+                                Informe o valor para somar ao item <strong>{reportItems[summingIndex].sku}</strong>.
+                                <br />
+                                Atual: {reportItems[summingIndex].currentCount}
+                            </p>
+                            <input
+                                type="number"
+                                ref={sumInputRef}
+                                autoFocus
+                                placeholder="Valor a somar (ex: 10)"
+                                className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-white mb-6 focus:ring-2 focus:ring-emerald-500 outline-none no-spinner"
+                                value={sumValue}
+                                onChange={(e) => setSumValue(e.target.value === '' ? '' : Number(e.target.value))}
+                                onKeyDown={(e) => e.key === 'Enter' && handleSum()}
+                            />
+                            <div className="flex gap-3">
+                                <button
+                                    onClick={() => {
+                                        setSummingIndex(null);
+                                        setSumValue('');
+                                    }}
+                                    className="flex-1 py-3 text-slate-400 hover:text-white font-semibold transition-colors"
+                                >
+                                    Cancelar
+                                </button>
+                                <button
+                                    onClick={handleSum}
+                                    disabled={sumValue === ''}
+                                    className="flex-1 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold py-3 rounded-xl transition-all shadow-lg active:scale-95"
+                                >
+                                    Somar
                                 </button>
                             </div>
                         </div>

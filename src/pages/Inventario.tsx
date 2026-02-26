@@ -14,7 +14,7 @@ import {
     where
 } from 'firebase/firestore';
 import { db } from '../db/firebase';
-import { Search, Plus, Printer, Trash2, Edit2, X, AlertTriangle, Share2, ClipboardList } from 'lucide-react';
+import { Search, Plus, Printer, Trash2, Edit2, X, AlertTriangle, Share2, ClipboardList, Calculator } from 'lucide-react';
 import { deleteDoc } from 'firebase/firestore';
 
 interface ReportItem {
@@ -50,9 +50,12 @@ const Inventario = () => {
     const [showMissingModal, setShowMissingModal] = useState(false);
     const [duplicateItemIndex, setDuplicateItemIndex] = useState<number | null>(null);
     const [filterDate, setFilterDate] = useState('');
+    const [summingIndex, setSummingIndex] = useState<number | null>(null);
+    const [sumValue, setSumValue] = useState<number | string>('');
 
     const skuInputRef = useRef<HTMLInputElement>(null);
     const quantityInputRef = useRef<HTMLInputElement>(null);
+    const sumInputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
         // Removemos o 'where' temporariamente para evitar o erro de índice composto
@@ -144,6 +147,16 @@ const Inventario = () => {
         setQuantity('');
         setProducts([]);
         skuInputRef.current?.focus();
+    };
+
+    const handleSum = () => {
+        if (summingIndex !== null && sumValue !== '') {
+            const updatedItems = [...reportItems];
+            updatedItems[summingIndex].currentCount += Number(sumValue);
+            setReportItems(updatedItems);
+            setSummingIndex(null);
+            setSumValue('');
+        }
     };
 
     const confirmUpdate = () => {
@@ -545,8 +558,16 @@ const Inventario = () => {
                                             onChange={(e) => !selectedProduct && handleSearchProduct(e.target.value)}
                                             readOnly={!!selectedProduct}
                                         />
-                                        {selectedProduct && (
-                                            <button onClick={() => setSelectedProduct(null)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white">
+                                        {(selectedProduct || searchTerm) && (
+                                            <button
+                                                onClick={() => {
+                                                    setSelectedProduct(null);
+                                                    setSearchTerm('');
+                                                    setProducts([]);
+                                                    skuInputRef.current?.focus();
+                                                }}
+                                                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
+                                            >
                                                 <X size={18} />
                                             </button>
                                         )}
@@ -612,30 +633,48 @@ const Inventario = () => {
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-800 bg-slate-900/30">
-                                            {reportItems.map((item, idx) => {
-                                                const diff = item.currentCount - item.previousCount;
-                                                return (
-                                                    <tr key={idx}>
-                                                        <td className="px-6 py-4">
-                                                            <p className="font-mono text-emerald-400">{item.sku}</p>
-                                                            <p className="text-slate-500 text-xs truncate max-w-[200px]">{item.description}</p>
-                                                        </td>
-                                                        <td className="px-6 py-4 text-center font-medium text-slate-400">{item.previousCount}</td>
-                                                        <td className="px-6 py-4 text-center font-bold text-white">{item.currentCount}</td>
-                                                        <td className={`px-6 py-4 text-center font-bold ${diff > 0 ? 'text-emerald-400' : diff < 0 ? 'text-red-400' : 'text-slate-500'}`}>
-                                                            {diff > 0 ? `+${diff}` : diff}
-                                                        </td>
-                                                        <td className="px-6 py-4 text-right">
-                                                            <button
-                                                                onClick={() => setReportItems(reportItems.filter((_, i) => i !== idx))}
-                                                                className="text-slate-600 hover:text-red-400 p-1"
-                                                            >
-                                                                <X size={18} />
-                                                            </button>
-                                                        </td>
-                                                    </tr>
-                                                );
-                                            })}
+                                            {reportItems
+                                                .filter(i =>
+                                                    i.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                                                    i.description.toLowerCase().includes(searchTerm.toLowerCase())
+                                                )
+                                                .map((item, idx) => {
+                                                    const diff = item.currentCount - item.previousCount;
+                                                    const originalIndex = reportItems.findIndex(ri => ri === item);
+                                                    return (
+                                                        <tr key={idx}>
+                                                            <td className="px-6 py-4">
+                                                                <p className="font-mono text-emerald-400">{item.sku}</p>
+                                                                <p className="text-slate-500 text-xs truncate max-w-[200px]">{item.description}</p>
+                                                            </td>
+                                                            <td className="px-6 py-4 text-center font-medium text-slate-400">{item.previousCount}</td>
+                                                            <td className="px-6 py-4 text-center font-bold text-white">{item.currentCount}</td>
+                                                            <td className={`px-6 py-4 text-center font-bold ${diff > 0 ? 'text-emerald-400' : diff < 0 ? 'text-red-400' : 'text-slate-500'}`}>
+                                                                {diff > 0 ? `+${diff}` : diff}
+                                                            </td>
+                                                            <td className="px-6 py-4 text-right">
+                                                                <div className="flex justify-end gap-2">
+                                                                    <button
+                                                                        onClick={() => {
+                                                                            setSummingIndex(originalIndex);
+                                                                            setSumValue('');
+                                                                        }}
+                                                                        className="text-emerald-500 hover:text-emerald-400 p-1"
+                                                                        title="Somar Quantidade"
+                                                                    >
+                                                                        <Calculator size={18} />
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={() => setReportItems(reportItems.filter((_, i) => i !== originalIndex))}
+                                                                        className="text-slate-600 hover:text-red-400 p-1"
+                                                                    >
+                                                                        <X size={18} />
+                                                                    </button>
+                                                                </div>
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                })}
                                             {reportItems.length === 0 && (
                                                 <tr>
                                                     <td colSpan={5} className="px-6 py-12 text-center text-slate-600 italic">
@@ -649,36 +688,53 @@ const Inventario = () => {
 
                                 {/* Mobile View dos itens no modal */}
                                 <div className="md:hidden space-y-3">
-                                    {reportItems.map((item, idx) => {
-                                        const diff = item.currentCount - item.previousCount;
-                                        return (
-                                            <div key={idx} className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex justify-between items-center shadow-sm">
-                                                <div className="flex-1 min-w-0 pr-4">
-                                                    <p className="font-mono text-emerald-400 font-bold text-sm truncate">{item.sku}</p>
-                                                    <p className="text-slate-500 text-[10px] truncate">{item.description}</p>
-                                                    <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-                                                        <div className="text-slate-400 bg-slate-800/50 p-2 rounded-lg text-center">
-                                                            <span className="block text-[8px] uppercase font-bold text-slate-500 mb-0.5">Anterior</span>
-                                                            <span className="font-bold">{item.previousCount}</span>
+                                    {reportItems
+                                        .filter(i =>
+                                            i.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                                            i.description.toLowerCase().includes(searchTerm.toLowerCase())
+                                        )
+                                        .map((item, idx) => {
+                                            const diff = item.currentCount - item.previousCount;
+                                            const originalIndex = reportItems.findIndex(ri => ri === item);
+                                            return (
+                                                <div key={idx} className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex justify-between items-center shadow-sm">
+                                                    <div className="flex-1 min-w-0 pr-4">
+                                                        <p className="font-mono text-emerald-400 font-bold text-sm truncate">{item.sku}</p>
+                                                        <p className="text-slate-500 text-[10px] truncate">{item.description}</p>
+                                                        <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                                                            <div className="text-slate-400 bg-slate-800/50 p-2 rounded-lg text-center">
+                                                                <span className="block text-[8px] uppercase font-bold text-slate-500 mb-0.5">Anterior</span>
+                                                                <span className="font-bold">{item.previousCount}</span>
+                                                            </div>
+                                                            <div className="text-white bg-slate-800/50 p-2 rounded-lg text-center">
+                                                                <span className="block text-[8px] uppercase font-bold text-slate-500 mb-0.5">Atual</span>
+                                                                <span className="font-bold">{item.currentCount}</span>
+                                                            </div>
                                                         </div>
-                                                        <div className="text-white bg-slate-800/50 p-2 rounded-lg text-center">
-                                                            <span className="block text-[8px] uppercase font-bold text-slate-500 mb-0.5">Atual</span>
-                                                            <span className="font-bold">{item.currentCount}</span>
+                                                        <div className={`mt-2 text-center p-1 rounded-lg text-[10px] font-bold ${diff > 0 ? 'bg-emerald-500/10 text-emerald-400' : diff < 0 ? 'bg-red-500/10 text-red-500' : 'bg-slate-800 text-slate-500'}`}>
+                                                            Diferença: {diff > 0 ? `+${diff}` : diff}
                                                         </div>
                                                     </div>
-                                                    <div className={`mt-2 text-center p-1 rounded-lg text-[10px] font-bold ${diff > 0 ? 'bg-emerald-500/10 text-emerald-400' : diff < 0 ? 'bg-red-500/10 text-red-500' : 'bg-slate-800 text-slate-500'}`}>
-                                                        Diferença: {diff > 0 ? `+${diff}` : diff}
+                                                    <div className="flex flex-col gap-2">
+                                                        <button
+                                                            onClick={() => {
+                                                                setSummingIndex(originalIndex);
+                                                                setSumValue('');
+                                                            }}
+                                                            className="p-3 bg-emerald-500/10 text-emerald-500 rounded-lg active:scale-95 transition-all"
+                                                        >
+                                                            <Calculator size={18} />
+                                                        </button>
+                                                        <button
+                                                            onClick={() => setReportItems(reportItems.filter((_, i) => i !== originalIndex))}
+                                                            className="p-3 bg-red-400/10 text-red-500 rounded-lg active:scale-95 transition-all"
+                                                        >
+                                                            <X size={18} />
+                                                        </button>
                                                     </div>
                                                 </div>
-                                                <button
-                                                    onClick={() => setReportItems(reportItems.filter((_, i) => i !== idx))}
-                                                    className="p-3 bg-red-400/10 text-red-500 rounded-lg active:scale-95 transition-all"
-                                                >
-                                                    <X size={18} />
-                                                </button>
-                                            </div>
-                                        );
-                                    })}
+                                            );
+                                        })}
                                     {reportItems.length === 0 && (
                                         <div className="py-8 text-center text-slate-500 italic text-sm border-2 border-dashed border-slate-800 rounded-xl">
                                             Nenhum item adicionado
@@ -788,6 +844,52 @@ const Inventario = () => {
                                     className="bg-transparent hover:bg-slate-800/50 text-slate-500 hover:text-white py-3 font-semibold transition-all text-xs"
                                 >
                                     Revisar
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {/* Modal de Soma */}
+            {summingIndex !== null && (
+                <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+                    <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl animate-in fade-in zoom-in duration-200">
+                        <div className="p-6 text-center">
+                            <div className="w-16 h-16 bg-emerald-500/10 text-emerald-500 rounded-full flex items-center justify-center mx-auto mb-4">
+                                <Calculator size={32} />
+                            </div>
+                            <h2 className="text-xl font-bold text-white mb-2">Somar Quantidade</h2>
+                            <p className="text-slate-400 mb-6 text-sm">
+                                Informe o valor para somar ao item <strong>{reportItems[summingIndex].sku}</strong>.
+                                <br />
+                                Atual: {reportItems[summingIndex].currentCount}
+                            </p>
+                            <input
+                                type="number"
+                                ref={sumInputRef}
+                                autoFocus
+                                placeholder="Valor a somar (ex: 10)"
+                                className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-white mb-6 focus:ring-2 focus:ring-emerald-500 outline-none no-spinner"
+                                value={sumValue}
+                                onChange={(e) => setSumValue(e.target.value === '' ? '' : Number(e.target.value))}
+                                onKeyDown={(e) => e.key === 'Enter' && handleSum()}
+                            />
+                            <div className="flex gap-3">
+                                <button
+                                    onClick={() => {
+                                        setSummingIndex(null);
+                                        setSumValue('');
+                                    }}
+                                    className="flex-1 py-3 text-slate-400 hover:text-white font-semibold transition-colors"
+                                >
+                                    Cancelar
+                                </button>
+                                <button
+                                    onClick={handleSum}
+                                    disabled={sumValue === ''}
+                                    className="flex-1 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold py-3 rounded-xl transition-all shadow-lg active:scale-95"
+                                >
+                                    Somar
                                 </button>
                             </div>
                         </div>
