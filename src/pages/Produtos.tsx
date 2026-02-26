@@ -66,17 +66,35 @@ const Produtos = () => {
         // Check for duplicate SKU
         const skuQuery = query(collection(db, 'products'), where('sku', '==', sku));
         const skuSnapshot = await getDocs(skuQuery);
+        const isSkuDuplicate = skuSnapshot.docs.some(doc => currentProduct ? doc.id !== currentProduct.id : true);
 
-        const isDuplicate = skuSnapshot.docs.some(doc => {
-            if (currentProduct) {
-                return doc.id !== currentProduct.id;
-            }
-            return true;
-        });
-
-        if (isDuplicate) {
+        if (isSkuDuplicate) {
             setError('Este SKU já está cadastrado em outro produto.');
             return;
+        }
+
+        // Check for duplicate EAN (only if EAN is provided)
+        if (ean && ean.trim() !== '') {
+            const eanQuery = query(collection(db, 'products'), where('ean', '==', ean.trim()));
+            const eanSnapshot = await getDocs(eanQuery);
+            const isEanDuplicate = eanSnapshot.docs.some(doc => currentProduct ? doc.id !== currentProduct.id : true);
+
+            if (isEanDuplicate) {
+                setError('Este EAN já está cadastrado em outro produto.');
+                return;
+            }
+        }
+
+        // Check for duplicate Model (only if Model is provided)
+        if (model && model.trim() !== '') {
+            const modelQuery = query(collection(db, 'products'), where('model', '==', model.trim()));
+            const modelSnapshot = await getDocs(modelQuery);
+            const isModelDuplicate = modelSnapshot.docs.some(doc => currentProduct ? doc.id !== currentProduct.id : true);
+
+            if (isModelDuplicate) {
+                setError('Este Modelo já está cadastrado em outro produto.');
+                return;
+            }
         }
 
         const historyEntry = {
