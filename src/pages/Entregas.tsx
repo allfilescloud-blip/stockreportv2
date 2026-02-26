@@ -819,7 +819,7 @@ const Entregas = () => {
             {/* Modal de Confirmação de Exclusão de Item */}
             {showDeleteConfirm && (
                 <div className="fixed inset-0 z-[90] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-                    <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-sm overflow-hidden shadow-2xl animate-in fade-in zoom-in duration-200">
+                    <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl animate-in fade-in zoom-in duration-200">
                         <div className="p-6 text-center">
                             <div className="w-16 h-16 bg-red-500/10 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4">
                                 <Trash2 size={32} />
@@ -859,7 +859,7 @@ const Entregas = () => {
             {/* Modal de Confirmação de Exclusão de Relatório */}
             {showReportDeleteConfirm && (
                 <div className="fixed inset-0 z-[90] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-                    <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-sm overflow-hidden shadow-2xl animate-in fade-in zoom-in duration-200">
+                    <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl animate-in fade-in zoom-in duration-200">
                         <div className="p-6 text-center">
                             <div className="w-16 h-16 bg-red-500/10 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4">
                                 <Trash2 size={32} />
