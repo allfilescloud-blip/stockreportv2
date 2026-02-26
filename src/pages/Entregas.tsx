@@ -639,7 +639,15 @@ const Entregas = () => {
                                                                     >
                                                                         <Calculator size={18} />
                                                                     </button>
-                                                                    <button onClick={() => setReportItems(reportItems.filter((_, i) => i !== originalIndex))} className="text-slate-600 hover:text-red-400 p-2 transition-colors">
+                                                                    <button
+                                                                        onClick={() => {
+                                                                            if (window.confirm('Remover este item da entrega?')) {
+                                                                                setReportItems(reportItems.filter((_, i) => i !== originalIndex));
+                                                                            }
+                                                                        }}
+                                                                        className="text-slate-600 hover:text-red-400 p-2 transition-colors"
+                                                                        title="Excluir"
+                                                                    >
                                                                         <Trash2 size={18} />
                                                                     </button>
                                                                 </div>

@@ -709,10 +709,15 @@ const Inventario = () => {
                                                                         <Calculator size={18} />
                                                                     </button>
                                                                     <button
-                                                                        onClick={() => setReportItems(reportItems.filter((_, i) => i !== originalIndex))}
+                                                                        onClick={() => {
+                                                                            if (window.confirm('Remover este item do relatório?')) {
+                                                                                setReportItems(reportItems.filter((_, i) => i !== originalIndex));
+                                                                            }
+                                                                        }}
                                                                         className="text-slate-600 hover:text-red-400 p-1"
+                                                                        title="Excluir"
                                                                     >
-                                                                        <X size={18} />
+                                                                        <Trash2 size={18} />
                                                                     </button>
                                                                 </div>
                                                             </td>
@@ -777,7 +782,7 @@ const Inventario = () => {
                                                             }}
                                                             className="p-3 bg-red-400/10 text-red-500 rounded-lg active:scale-95 transition-all"
                                                         >
-                                                            <X size={18} />
+                                                            <Trash2 size={18} />
                                                         </button>
                                                     </div>
                                                 </div>
