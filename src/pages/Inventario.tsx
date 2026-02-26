@@ -54,6 +54,10 @@ const Inventario = () => {
     const [filterDate, setFilterDate] = useState('');
     const [summingIndex, setSummingIndex] = useState<number | null>(null);
     const [sumValue, setSumValue] = useState<number | string>('');
+    const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+    const [itemIndexToDelete, setItemIndexToDelete] = useState<number | null>(null);
+    const [showReportDeleteConfirm, setShowReportDeleteConfirm] = useState(false);
+    const [reportIdToDelete, setReportIdToDelete] = useState<string | null>(null);
 
     const skuInputRef = useRef<HTMLInputElement>(null);
     const quantityInputRef = useRef<HTMLInputElement>(null);
@@ -274,9 +278,16 @@ const Inventario = () => {
     };
 
     const deleteReport = async (id: string) => {
-        if (!window.confirm('Tem certeza que deseja excluir este relatório?')) return;
+        setReportIdToDelete(id);
+        setShowReportDeleteConfirm(true);
+    };
+
+    const confirmDeleteReport = async () => {
+        if (!reportIdToDelete) return;
         try {
-            await deleteDoc(doc(db, 'reports', id));
+            await deleteDoc(doc(db, 'reports', reportIdToDelete));
+            setShowReportDeleteConfirm(false);
+            setReportIdToDelete(null);
         } catch (error) {
             console.error('Erro ao excluir:', error);
         }
@@ -710,9 +721,8 @@ const Inventario = () => {
                                                                     </button>
                                                                     <button
                                                                         onClick={() => {
-                                                                            if (window.confirm('Remover este item do relatório?')) {
-                                                                                setReportItems(reportItems.filter((_, i) => i !== originalIndex));
-                                                                            }
+                                                                            setItemIndexToDelete(originalIndex);
+                                                                            setShowDeleteConfirm(true);
                                                                         }}
                                                                         className="text-slate-600 hover:text-red-400 p-1"
                                                                         title="Excluir"
@@ -776,9 +786,8 @@ const Inventario = () => {
                                                         </button>
                                                         <button
                                                             onClick={() => {
-                                                                if (window.confirm('Remover este item do relatório?')) {
-                                                                    setReportItems(reportItems.filter((_, i) => i !== originalIndex));
-                                                                }
+                                                                setItemIndexToDelete(originalIndex);
+                                                                setShowDeleteConfirm(true);
                                                             }}
                                                             className="p-3 bg-red-400/10 text-red-500 rounded-lg active:scale-95 transition-all"
                                                         >
@@ -949,7 +958,85 @@ const Inventario = () => {
                     </div>
                 </div>
             )}
-        </div>
+
+            {/* Modal de Confirmação de Exclusão de Item */}
+            {
+                showDeleteConfirm && (
+                    <div className="fixed inset-0 z-[90] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+                        <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl animate-in fade-in zoom-in duration-200">
+                            <div className="p-6 text-center">
+                                <div className="w-16 h-16 bg-red-500/10 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4">
+                                    <Trash2 size={32} />
+                                </div>
+                                <h2 className="text-xl font-bold text-white mb-2">Remover Item?</h2>
+                                <p className="text-slate-400 mb-6 text-sm">
+                                    Tem certeza que deseja remover este item do relatório? Esta ação não pode ser desfeita.
+                                </p>
+                                <div className="flex gap-3">
+                                    <button
+                                        onClick={() => {
+                                            setShowDeleteConfirm(false);
+                                            setItemIndexToDelete(null);
+                                        }}
+                                        className="flex-1 py-3 text-slate-400 hover:text-white font-semibold transition-colors"
+                                    >
+                                        Cancelar
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            if (itemIndexToDelete !== null) {
+                                                setReportItems(reportItems.filter((_, i) => i !== itemIndexToDelete));
+                                            }
+                                            setShowDeleteConfirm(false);
+                                            setItemIndexToDelete(null);
+                                        }}
+                                        className="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-3 rounded-xl transition-all shadow-lg active:scale-95"
+                                    >
+                                        Excluir
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )
+            }
+
+            {/* Modal de Confirmação de Exclusão de Relatório */}
+            {
+                showReportDeleteConfirm && (
+                    <div className="fixed inset-0 z-[90] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+                        <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl animate-in fade-in zoom-in duration-200">
+                            <div className="p-6 text-center">
+                                <div className="w-16 h-16 bg-red-500/10 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4">
+                                    <Trash2 size={32} />
+                                </div>
+                                <h2 className="text-xl font-bold text-white mb-2">Excluir Relatório?</h2>
+                                <p className="text-slate-400 mb-6 text-sm">
+                                    Tem certeza que deseja apagar este relatório permanentemente?
+                                </p>
+                                <div className="flex gap-3">
+                                    <button
+                                        onClick={() => {
+                                            setShowReportDeleteConfirm(false);
+                                            setReportIdToDelete(null);
+                                        }}
+                                        className="flex-1 py-3 text-slate-400 hover:text-white font-semibold transition-colors"
+                                    >
+                                        Cancelar
+                                    </button>
+                                    <button
+                                        onClick={confirmDeleteReport}
+                                        className="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-3 rounded-xl transition-all shadow-lg active:scale-95"
+                                    >
+                                        Excluir
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )
+            }
+        </div >
     );
 };
 

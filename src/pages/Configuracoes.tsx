@@ -28,6 +28,12 @@ const Configuracoes = () => {
     const [isImporting, setIsImporting] = useState(false);
     const [isPurging, setIsPurging] = useState(false);
     const [purgeDays, setPurgeDays] = useState(90);
+    const [showUserDeleteConfirm, setShowUserDeleteConfirm] = useState(false);
+    const [userIdToDelete, setUserIdToDelete] = useState<string | null>(null);
+    const [showImportConfirm, setShowImportConfirm] = useState(false);
+    const [importFile, setImportFile] = useState<File | null>(null);
+    const [showPurgeConfirm, setShowPurgeConfirm] = useState(false);
+    const [purgeType, setPurgeType] = useState<'reports' | 'history' | null>(null);
 
     useEffect(() => {
         if (isAdmin) {
@@ -76,10 +82,17 @@ const Configuracoes = () => {
     };
 
     const handleReject = async (userId: string) => {
-        if (!window.confirm('Tem certeza que deseja excluir este pedido de acesso?')) return;
-        setLoadingAction(userId);
+        setUserIdToDelete(userId);
+        setShowUserDeleteConfirm(true);
+    };
+
+    const confirmRejectUser = async () => {
+        if (!userIdToDelete) return;
+        setLoadingAction(userIdToDelete);
         try {
-            await deleteDoc(doc(db, 'users', userId));
+            await deleteDoc(doc(db, 'users', userIdToDelete));
+            setShowUserDeleteConfirm(false);
+            setUserIdToDelete(null);
         } catch (error) {
             console.error('Erro ao excluir usuário:', error);
         } finally {
@@ -153,12 +166,16 @@ const Configuracoes = () => {
         const file = event.target.files?.[0];
         if (!file) return;
 
-        if (!window.confirm('Atenção: A importação pode sobrescrever dados existentes. Deseja continuar?')) {
-            event.target.value = '';
-            return;
-        }
+        setImportFile(file);
+        setShowImportConfirm(true);
+        // Resetamos o valor para permitir selecionar o mesmo arquivo novamente se cancelar
+        event.target.value = '';
+    };
 
+    const confirmImportBackup = async () => {
+        if (!importFile) return;
         setIsImporting(true);
+        setShowImportConfirm(false);
         try {
             const reader = new FileReader();
             reader.onload = async (e) => {
@@ -174,29 +191,31 @@ const Configuracoes = () => {
                 alert('Importação concluída com sucesso!');
                 window.location.reload();
             };
-            reader.readAsText(file);
+            if (importFile) {
+                reader.readAsText(importFile);
+            }
         } catch (error) {
             console.error('Erro ao importar backup:', error);
             alert('Erro ao importar backup. Verifique o formato do arquivo.');
         } finally {
             setIsImporting(false);
-            event.target.value = '';
         }
     };
 
     const handlePurgeData = async (type: 'reports' | 'history') => {
-        const msg = type === 'reports'
-            ? `Tem certeza que deseja deletar RELATÓRIOS com mais de ${purgeDays} dias? Esta ação é irreversível.`
-            : `Tem certeza que deseja limpar o HISTÓRICO DE PRODUTOS com mais de ${purgeDays} dias? Esta ação é irreversível.`;
+        setPurgeType(type);
+        setShowPurgeConfirm(true);
+    };
 
-        if (!window.confirm(msg)) return;
-
+    const confirmPurgeData = async () => {
+        if (!purgeType) return;
+        setShowPurgeConfirm(false);
         setIsPurging(true);
         try {
             const cutoffDate = new Date();
             cutoffDate.setDate(cutoffDate.getDate() - purgeDays);
 
-            if (type === 'reports') {
+            if (purgeType === 'reports') {
                 const snapshot = await getDocs(collection(db, 'reports'));
                 let deletedCount = 0;
 
@@ -624,6 +643,108 @@ const Configuracoes = () => {
                         </div>
                     )}
                 </div>
+
+                {/* Modal de Confirmação de Rejeição de Usuário */}
+                {showUserDeleteConfirm && (
+                    <div className="fixed inset-0 z-[90] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+                        <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl animate-in fade-in zoom-in duration-200">
+                            <div className="p-6 text-center">
+                                <div className="w-16 h-16 bg-red-500/10 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4">
+                                    <Trash2 size={32} />
+                                </div>
+                                <h2 className="text-xl font-bold text-white mb-2">Rejeitar Acesso?</h2>
+                                <p className="text-slate-400 mb-6 text-sm">
+                                    Tem certeza que deseja excluir permanentemente este pedido de acesso?
+                                </p>
+                                <div className="flex gap-3">
+                                    <button
+                                        onClick={() => {
+                                            setShowUserDeleteConfirm(false);
+                                            setUserIdToDelete(null);
+                                        }}
+                                        className="flex-1 py-3 text-slate-400 hover:text-white font-semibold transition-colors"
+                                    >
+                                        Cancelar
+                                    </button>
+                                    <button
+                                        onClick={confirmRejectUser}
+                                        className="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-3 rounded-xl transition-all shadow-lg active:scale-95"
+                                    >
+                                        Excluir
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Modal de Confirmação de Importação */}
+                {showImportConfirm && (
+                    <div className="fixed inset-0 z-[90] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+                        <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl animate-in fade-in zoom-in duration-200">
+                            <div className="p-6 text-center">
+                                <div className="w-16 h-16 bg-amber-500/10 text-amber-500 rounded-full flex items-center justify-center mx-auto mb-4">
+                                    <AlertCircle size={32} />
+                                </div>
+                                <h2 className="text-xl font-bold text-white mb-2">Importar Backup?</h2>
+                                <p className="text-slate-400 mb-6 text-sm">
+                                    Atenção: A importação pode sobrescrever dados existentes. Deseja continuar com o arquivo <strong>{importFile?.name}</strong>?
+                                </p>
+                                <div className="flex gap-3">
+                                    <button
+                                        onClick={() => {
+                                            setShowImportConfirm(false);
+                                            setImportFile(null);
+                                        }}
+                                        className="flex-1 py-3 text-slate-400 hover:text-white font-semibold transition-colors"
+                                    >
+                                        Cancelar
+                                    </button>
+                                    <button
+                                        onClick={confirmImportBackup}
+                                        className="flex-1 bg-amber-600 hover:bg-amber-700 text-white font-bold py-3 rounded-xl transition-all shadow-lg active:scale-95"
+                                    >
+                                        Importar
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Modal de Confirmação de Limpeza de Dados */}
+                {showPurgeConfirm && (
+                    <div className="fixed inset-0 z-[90] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+                        <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl animate-in fade-in zoom-in duration-200">
+                            <div className="p-6 text-center">
+                                <div className="w-16 h-16 bg-red-500/10 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4">
+                                    <Trash2 size={32} />
+                                </div>
+                                <h2 className="text-xl font-bold text-white mb-2">Limpar Dados?</h2>
+                                <p className="text-slate-400 mb-6 text-sm">
+                                    Tem certeza que deseja deletar {purgeType === 'reports' ? 'RELATÓRIOS' : 'HISTÓRICOS'} com mais de {purgeDays} dias? Esta ação é irreversível.
+                                </p>
+                                <div className="flex gap-3">
+                                    <button
+                                        onClick={() => {
+                                            setShowPurgeConfirm(false);
+                                            setPurgeType(null);
+                                        }}
+                                        className="flex-1 py-3 text-slate-400 hover:text-white font-semibold transition-colors"
+                                    >
+                                        Cancelar
+                                    </button>
+                                    <button
+                                        onClick={confirmPurgeData}
+                                        className="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-3 rounded-xl transition-all shadow-lg active:scale-95"
+                                    >
+                                        Limpar
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
             </div>
         </div>
     );
