@@ -328,7 +328,7 @@ const Produtos = () => {
                 <div>
                     <h1 className="text-3xl font-bold text-white">Produtos</h1>
                     <p className="text-slate-400">Gerencie seu catálogo de itens</p>
-                    <div className="flex gap-4 mt-2 text-[10px] font-bold uppercase tracking-wider">
+                    <div className="flex gap-4 mt-2 text-sm font-bold uppercase tracking-wider">
                         <span className="text-slate-500">Total: <span className="text-slate-300">{products.length}</span></span>
                         <span className="text-slate-500">Ativos: <span className="text-emerald-500">{products.filter(p => p.status === 'active').length}</span></span>
                         <span className="text-slate-500">Inativos: <span className="text-red-500">{products.filter(p => p.status === 'inactive').length}</span></span>
