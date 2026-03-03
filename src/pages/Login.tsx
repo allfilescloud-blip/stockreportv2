@@ -68,27 +68,27 @@ const Login = () => {
     };
 
     return (
-        <div className="min-h-screen flex items-center justify-center bg-slate-950 p-4 font-sans">
-            <div className="max-w-md w-full bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-2xl animate-in fade-in zoom-in duration-300">
+        <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950 p-4 font-sans">
+            <div className="max-w-md w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-8 shadow-2xl animate-in fade-in zoom-in duration-300">
                 <div className="flex flex-col items-center mb-8">
                     <div className="p-4 bg-blue-600/10 rounded-full mb-4">
                         <Package size={48} className="text-blue-500" />
                     </div>
-                    <h1 className="text-3xl font-bold text-white tracking-tight">StockReport</h1>
-                    <p className="text-slate-400 mt-2 text-sm">Gestão de Inventário Inteligente</p>
+                    <h1 className="text-3xl font-bold text-slate-900 dark:text-white tracking-tight">StockReport</h1>
+                    <p className="text-slate-500 dark:text-slate-400 mt-2 text-sm">Gestão de Inventário Inteligente</p>
                 </div>
 
-                <div className="flex bg-slate-800/50 p-1 rounded-xl mb-8">
+                <div className="flex bg-slate-100/50 dark:bg-slate-800/50 p-1 rounded-xl mb-8">
                     <button
                         onClick={() => { setIsRegistering(false); setError(''); setSuccess(''); }}
-                        className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-bold transition-all ${!isRegistering ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}
+                        className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-bold transition-all ${!isRegistering ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500 dark:text-slate-400 hover:text-white'}`}
                     >
                         <LogIn size={16} /> Login
                     </button>
                     {allowRegistration && (
                         <button
                             onClick={() => { setIsRegistering(true); setError(''); setSuccess(''); }}
-                            className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-bold transition-all ${isRegistering ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}
+                            className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-bold transition-all ${isRegistering ? 'bg-blue-600 text-white shadow-lg' : 'text-slate-500 dark:text-slate-400 hover:text-white'}`}
                         >
                             <UserPlus size={16} /> Cadastro
                         </button>
@@ -104,7 +104,7 @@ const Login = () => {
                                 type="email"
                                 value={email}
                                 onChange={(e) => setEmail(e.target.value)}
-                                className="w-full pl-12 pr-4 py-3.5 bg-slate-800 border border-slate-700 rounded-2xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all placeholder:text-slate-600"
+                                className="w-full pl-12 pr-4 py-3.5 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-2xl text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all placeholder:text-slate-600"
                                 placeholder="seu@email.com"
                                 required
                             />
@@ -119,7 +119,7 @@ const Login = () => {
                                 type="password"
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}
-                                className="w-full pl-12 pr-4 py-3.5 bg-slate-800 border border-slate-700 rounded-2xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all placeholder:text-slate-600"
+                                className="w-full pl-12 pr-4 py-3.5 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-2xl text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all placeholder:text-slate-600"
                                 placeholder="••••••••"
                                 required
                             />
@@ -135,7 +135,7 @@ const Login = () => {
                                     type="password"
                                     value={confirmPassword}
                                     onChange={(e) => setConfirmPassword(e.target.value)}
-                                    className="w-full pl-12 pr-4 py-3.5 bg-slate-800 border border-slate-700 rounded-2xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all placeholder:text-slate-600"
+                                    className="w-full pl-12 pr-4 py-3.5 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-2xl text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all placeholder:text-slate-600"
                                     placeholder="••••••••"
                                     required
                                 />

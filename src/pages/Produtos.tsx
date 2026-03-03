@@ -326,10 +326,10 @@ const Produtos = () => {
         <div className="p-4 md:p-8 max-w-full mx-auto">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
                 <div>
-                    <h1 className="text-3xl font-bold text-white">Produtos</h1>
-                    <p className="text-slate-400">Gerencie seu catálogo de itens</p>
+                    <h1 className="text-3xl font-bold text-slate-900 dark:text-white">Produtos</h1>
+                    <p className="text-slate-500 dark:text-slate-400">Gerencie seu catálogo de itens</p>
                     <div className="flex gap-4 mt-2 text-sm font-bold uppercase tracking-wider">
-                        <span className="text-slate-500">Total: <span className="text-slate-300">{products.length}</span></span>
+                        <span className="text-slate-500">Total: <span className="text-slate-700 dark:text-slate-300">{products.length}</span></span>
                         <span className="text-slate-500">Ativos: <span className="text-emerald-500">{products.filter(p => p.status === 'active').length}</span></span>
                         <span className="text-slate-500">Inativos: <span className="text-red-500">{products.filter(p => p.status === 'inactive').length}</span></span>
                     </div>
@@ -399,7 +399,7 @@ const Produtos = () => {
                             printWindow.document.write(html);
                             printWindow.document.close();
                         }}
-                        className="hidden md:flex p-3 bg-slate-800 hover:bg-slate-700 text-white rounded-xl transition-all border border-slate-700 shadow-lg"
+                        className="hidden md:flex p-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-white rounded-xl transition-all border border-slate-300 dark:border-slate-700 shadow-lg"
                         title="Imprimir"
                     >
                         <Printer size={20} />
@@ -415,44 +415,44 @@ const Produtos = () => {
                 </div>
             </div>
 
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
-                <div className="p-4 border-b border-slate-800 bg-slate-900/50 flex flex-col md:flex-row gap-4 items-center">
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+                <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-white/50 dark:bg-slate-900/50 flex flex-col md:flex-row gap-4 items-center">
                     <div className="relative flex-1 w-full group">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={20} />
                         <input
                             type="text"
                             placeholder="Buscar por SKU, EAN ou descrição..."
-                            className="w-full pl-10 pr-10 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+                            className="w-full pl-10 pr-10 py-2 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
                         />
                         {searchTerm && (
                             <button
                                 onClick={() => setSearchTerm('')}
-                                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white transition-colors p-1"
+                                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-900 dark:text-white transition-colors p-1"
                                 title="Limpar busca"
                             >
                                 <X size={16} />
                             </button>
                         )}
                     </div>
-                    <div className="flex items-center gap-2 bg-slate-800 p-1 rounded-lg border border-slate-700 w-full md:w-auto">
+                    <div className="flex items-center gap-2 bg-slate-100 dark:bg-slate-800 p-1 rounded-lg border border-slate-300 dark:border-slate-700 w-full md:w-auto">
                         <Filter size={16} className="ml-2 text-slate-500" />
                         <button
                             onClick={() => setStatusFilter('all')}
-                            className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${statusFilter === 'all' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                            className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${statusFilter === 'all' ? 'bg-blue-600 text-white' : 'text-slate-500 dark:text-slate-400 hover:text-white'}`}
                         >
                             Todos
                         </button>
                         <button
                             onClick={() => setStatusFilter('active')}
-                            className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${statusFilter === 'active' ? 'bg-emerald-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                            className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${statusFilter === 'active' ? 'bg-emerald-600 text-white' : 'text-slate-500 dark:text-slate-400 hover:text-white'}`}
                         >
                             Ativos
                         </button>
                         <button
                             onClick={() => setStatusFilter('inactive')}
-                            className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${statusFilter === 'inactive' ? 'bg-red-600 text-white' : 'text-slate-400 hover:text-white'}`}
+                            className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${statusFilter === 'inactive' ? 'bg-red-600 text-white' : 'text-slate-500 dark:text-slate-400 hover:text-white'}`}
                         >
                             Inativos
                         </button>
@@ -462,9 +462,9 @@ const Produtos = () => {
                 <div className="hidden md:block overflow-x-auto">
                     <table className="w-full text-left">
                         <thead>
-                            <tr className="bg-slate-800/50 text-slate-400 text-sm">
+                            <tr className="bg-slate-200/50 dark:bg-slate-700/50 text-slate-500 dark:text-slate-400 text-sm">
                                 <th
-                                    className="px-6 py-4 font-semibold text-nowrap cursor-pointer hover:bg-slate-700/50 transition-colors group"
+                                    className="px-6 py-4 font-semibold text-nowrap cursor-pointer transition-colors group"
                                     onClick={() => handleSort('sku')}
                                 >
                                     <div className="flex items-center gap-2">
@@ -474,7 +474,7 @@ const Produtos = () => {
                                 </th>
                                 <th className="px-6 py-4 font-semibold text-nowrap">EAN</th>
                                 <th
-                                    className="px-6 py-4 font-semibold w-full cursor-pointer hover:bg-slate-700/50 transition-colors group"
+                                    className="px-6 py-4 font-semibold w-full cursor-pointer transition-colors group"
                                     onClick={() => handleSort('description')}
                                 >
                                     <div className="flex items-center gap-2">
@@ -488,10 +488,10 @@ const Produtos = () => {
                         </thead>
                         <tbody className="divide-y divide-slate-800">
                             {filteredProducts.map(product => (
-                                <tr key={product.id} className="hover:bg-slate-800/30 transition-colors">
+                                <tr key={product.id} className="hover:bg-slate-100/30 dark:bg-slate-800/30 transition-colors">
                                     <td className="px-6 py-4 font-mono text-blue-400 text-nowrap text-sm">{product.sku}</td>
-                                    <td className="px-6 py-4 font-mono text-slate-400 text-nowrap text-xs">{product.ean || '-'}</td>
-                                    <td className="px-6 py-4 text-slate-300 min-w-[150px] text-sm md:text-base">{product.description}</td>
+                                    <td className="px-6 py-4 font-mono text-slate-500 dark:text-slate-400 text-nowrap text-xs">{product.ean || '-'}</td>
+                                    <td className="px-6 py-4 text-slate-700 dark:text-slate-300 min-w-[150px] text-sm md:text-base">{product.description}</td>
                                     <td className="px-6 py-4">
                                         <span className={`px-3 py-1 rounded-full text-xs font-medium ${product.status === 'active' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'
                                             }`}>
@@ -515,7 +515,7 @@ const Produtos = () => {
                                                     setStatus(product.status);
                                                     setIsModalOpen(true);
                                                 }}
-                                                className="p-2 text-slate-400 hover:text-white hover:bg-slate-700 rounded-lg transition-all"
+                                                className="p-2 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-white hover:bg-slate-200 dark:bg-slate-700 rounded-lg transition-all"
                                             >
                                                 <Edit2 size={18} />
                                             </button>
@@ -524,7 +524,7 @@ const Produtos = () => {
                                                     setCurrentProduct(product);
                                                     setIsHistoryOpen(true);
                                                 }}
-                                                className="p-2 text-slate-400 hover:text-white hover:bg-slate-700 rounded-lg transition-all"
+                                                className="p-2 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-white hover:bg-slate-200 dark:bg-slate-700 rounded-lg transition-all"
                                             >
                                                 <History size={18} />
                                             </button>
@@ -539,7 +539,7 @@ const Produtos = () => {
                 {/* Layout Mobile (Cards) */}
                 <div className="md:hidden divide-y divide-slate-800">
                     {filteredProducts.map(product => (
-                        <div key={product.id} className="p-4 space-y-4 hover:bg-slate-800/20 transition-colors">
+                        <div key={product.id} className="p-4 space-y-4 hover:bg-slate-100/20 dark:bg-slate-800/20 transition-colors">
                             <div className="flex justify-between items-start">
                                 <div className="space-y-1">
                                     <p className="font-mono text-blue-400 font-bold">{product.sku}</p>
@@ -550,9 +550,9 @@ const Produtos = () => {
                                 </span>
                             </div>
 
-                            <p className="text-slate-300 text-sm leading-relaxed">{product.description}</p>
+                            <p className="text-slate-700 dark:text-slate-300 text-sm leading-relaxed">{product.description}</p>
 
-                            <div className="flex items-center justify-between pt-2 border-t border-slate-800/50">
+                            <div className="flex items-center justify-between pt-2 border-t border-slate-200/50 dark:border-slate-800/50">
                                 <div className="flex gap-2">
                                     <button
                                         onClick={() => {
@@ -564,7 +564,7 @@ const Produtos = () => {
                                             setStatus(product.status);
                                             setIsModalOpen(true);
                                         }}
-                                        className="flex items-center gap-2 px-3 py-2 bg-slate-800 text-slate-300 rounded-lg text-xs font-bold border border-slate-700 active:scale-95 transition-all"
+                                        className="flex items-center gap-2 px-3 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg text-xs font-bold border border-slate-300 dark:border-slate-700 active:scale-95 transition-all"
                                     >
                                         <Edit2 size={14} />
                                         Editar
@@ -574,7 +574,7 @@ const Produtos = () => {
                                             setCurrentProduct(product);
                                             setIsHistoryOpen(true);
                                         }}
-                                        className="flex items-center gap-2 px-3 py-2 bg-slate-800 text-slate-300 rounded-lg text-xs font-bold border border-slate-700 active:scale-95 transition-all"
+                                        className="flex items-center gap-2 px-3 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg text-xs font-bold border border-slate-300 dark:border-slate-700 active:scale-95 transition-all"
                                     >
                                         <History size={14} />
                                         Histórico
@@ -599,10 +599,10 @@ const Produtos = () => {
             {/* Modal Cadastro/Edição */}
             {isModalOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-2 md:p-4 bg-black/80 backdrop-blur-sm">
-                    <div className="bg-slate-950 border border-slate-800 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl">
-                        <div className="p-4 md:p-6 border-b border-slate-800 flex justify-between items-center bg-slate-900/50">
-                            <h2 className="text-xl font-bold text-white">{currentProduct ? 'Editar Produto' : 'Novo Produto'}</h2>
-                            <button onClick={resetForm} className="text-slate-400 hover:text-white">
+                    <div className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl">
+                        <div className="p-4 md:p-6 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-white/50 dark:bg-slate-900/50">
+                            <h2 className="text-xl font-bold text-slate-900 dark:text-white">{currentProduct ? 'Editar Produto' : 'Novo Produto'}</h2>
+                            <button onClick={resetForm} className="text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-white">
                                 <X size={24} />
                             </button>
                         </div>
@@ -619,7 +619,7 @@ const Produtos = () => {
                                     autoFocus
                                     value={sku}
                                     onChange={(e) => setSku(e.target.value)}
-                                    className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                                    className="w-full px-4 py-3 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all"
                                     placeholder="Ex: PROD-123"
                                 />
                             </div>
@@ -629,7 +629,7 @@ const Produtos = () => {
                                     <input
                                         value={ean}
                                         onChange={(e) => setEan(e.target.value)}
-                                        className="flex-1 px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                                        className="flex-1 px-4 py-3 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all"
                                         placeholder="Ex: 7891234567890"
                                     />
                                     <button
@@ -637,7 +637,7 @@ const Produtos = () => {
                                         onClick={activeScanner === 'ean' ? stopScanner : () => startScanner('ean')}
                                         className={`p-3 rounded-lg border transition-all active:scale-95 ${activeScanner === 'ean'
                                             ? 'bg-red-500/10 border-red-500 text-red-500 animate-pulse'
-                                            : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white hover:bg-slate-700'
+                                            : 'bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:text-white hover:bg-slate-200 dark:bg-slate-700'
                                             }`}
                                         title={activeScanner === 'ean' ? "Parar Leitura" : "Escanear EAN"}
                                     >
@@ -647,7 +647,7 @@ const Produtos = () => {
                                 {activeScanner === 'ean' && (
                                     <div className="mt-4 overflow-hidden rounded-xl bg-black border border-blue-500/30">
                                         <div id="product-ean-reader" className="w-full"></div>
-                                        <div className="bg-slate-900/80 py-2 text-center text-[10px] text-blue-400 font-bold uppercase tracking-widest">
+                                        <div className="bg-white/80 dark:bg-slate-900/80 py-2 text-center text-[10px] text-blue-400 font-bold uppercase tracking-widest">
                                             Aponte para o código
                                         </div>
                                     </div>
@@ -659,7 +659,7 @@ const Produtos = () => {
                                     required
                                     value={description}
                                     onChange={(e) => setDescription(e.target.value)}
-                                    className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-white focus:ring-2 focus:ring-blue-500 outline-none h-24 transition-all"
+                                    className="w-full px-4 py-3 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none h-24 transition-all"
                                     placeholder="Descrição detalhada do produto..."
                                 />
                             </div>
@@ -669,7 +669,7 @@ const Produtos = () => {
                                     <input
                                         value={model}
                                         onChange={(e) => setModel(e.target.value)}
-                                        className="flex-1 px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                                        className="flex-1 px-4 py-3 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all"
                                         placeholder="Ex: iPhone 13 Pro"
                                     />
                                     <button
@@ -677,7 +677,7 @@ const Produtos = () => {
                                         onClick={activeScanner === 'model' ? stopScanner : () => startScanner('model')}
                                         className={`p-3 rounded-lg border transition-all active:scale-95 ${activeScanner === 'model'
                                             ? 'bg-red-500/10 border-red-500 text-red-500 animate-pulse'
-                                            : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white hover:bg-slate-700'
+                                            : 'bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:text-white hover:bg-slate-200 dark:bg-slate-700'
                                             }`}
                                         title={activeScanner === 'model' ? "Parar Leitura" : "Escanear Modelo"}
                                     >
@@ -688,7 +688,7 @@ const Produtos = () => {
                                 {activeScanner === 'model' && (
                                     <div className="mt-4 overflow-hidden rounded-xl bg-black border border-blue-500/30">
                                         <div id="product-model-reader" className="w-full"></div>
-                                        <div className="bg-slate-900/80 py-2 text-center text-[10px] text-blue-400 font-bold uppercase tracking-widest">
+                                        <div className="bg-white/80 dark:bg-slate-900/80 py-2 text-center text-[10px] text-blue-400 font-bold uppercase tracking-widest">
                                             Aponte para o código
                                         </div>
                                     </div>
@@ -699,14 +699,14 @@ const Produtos = () => {
                                 <select
                                     value={status}
                                     onChange={(e) => setStatus(e.target.value as any)}
-                                    className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                                    className="w-full px-4 py-3 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all"
                                 >
                                     <option value="active">Ativo</option>
                                     <option value="inactive">Inativo</option>
                                 </select>
                             </div>
                             <div className="pt-4 flex flex-col md:flex-row gap-3">
-                                <button type="button" onClick={resetForm} className="order-2 md:order-1 flex-1 py-3 text-slate-400 hover:text-white transition-colors">Cancelar</button>
+                                <button type="button" onClick={resetForm} className="order-2 md:order-1 flex-1 py-3 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-white transition-colors">Cancelar</button>
                                 <button type="submit" className="order-1 md:order-2 flex-[2] bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl transition-all shadow-lg active:scale-95">
                                     {currentProduct ? 'Salvar Alterações' : 'Cadastrar'}
                                 </button>
@@ -720,10 +720,10 @@ const Produtos = () => {
             {
                 isHistoryOpen && currentProduct && (
                     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-                        <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl">
-                            <div className="p-6 border-b border-slate-800 flex justify-between items-center bg-slate-800/50">
-                                <h2 className="text-xl font-bold text-white">Histórico: {currentProduct.sku}</h2>
-                                <button onClick={() => setIsHistoryOpen(false)} className="text-slate-400 hover:text-white">
+                        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl">
+                            <div className="p-6 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-100/50 dark:bg-slate-800/50">
+                                <h2 className="text-xl font-bold text-slate-900 dark:text-white">Histórico: {currentProduct.sku}</h2>
+                                <button onClick={() => setIsHistoryOpen(false)} className="text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-white">
                                     <X size={24} />
                                 </button>
                             </div>
@@ -731,8 +731,8 @@ const Produtos = () => {
                                 {currentProduct.history?.slice().reverse().map((entry, idx) => (
                                     <div key={idx} className="border-l-2 border-blue-500 pl-4 py-1">
                                         <p className="text-xs text-slate-500">{new Date(entry.date).toLocaleString('pt-BR')}</p>
-                                        <p className="text-white font-medium">{entry.action}</p>
-                                        <p className="text-sm text-slate-400">{entry.details}</p>
+                                        <p className="text-slate-900 dark:text-white font-medium">{entry.action}</p>
+                                        <p className="text-sm text-slate-500 dark:text-slate-400">{entry.details}</p>
                                     </div>
                                 ))}
                             </div>

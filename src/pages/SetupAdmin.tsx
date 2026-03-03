@@ -31,21 +31,21 @@ const SetupAdmin = () => {
     };
 
     return (
-        <div className="min-h-screen flex items-center justify-center bg-slate-950 p-4 font-sans">
-            <div className="max-w-md w-full bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-2xl text-center">
+        <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950 p-4 font-sans">
+            <div className="max-w-md w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-8 shadow-2xl text-center">
                 <div className="flex justify-center mb-6">
                     <div className="p-4 bg-emerald-500/10 rounded-full">
                         <ShieldCheck size={48} className="text-emerald-500" />
                     </div>
                 </div>
 
-                <h1 className="text-2xl font-bold text-white mb-2">Setup Admin Inicial</h1>
-                <p className="text-slate-400 mb-8 text-sm">Crie o primeiro acesso administrativo ao seu sistema de estoque.</p>
+                <h1 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Setup Admin Inicial</h1>
+                <p className="text-slate-500 dark:text-slate-400 mb-8 text-sm">Crie o primeiro acesso administrativo ao seu sistema de estoque.</p>
 
-                <div className="bg-slate-800/50 rounded-2xl p-6 mb-8 text-left border border-slate-700">
+                <div className="bg-slate-100/50 dark:bg-slate-800/50 rounded-2xl p-6 mb-8 text-left border border-slate-300 dark:border-slate-700">
                     <p className="text-xs font-bold text-slate-500 uppercase mb-2">Informações</p>
-                    <p className="text-white text-sm font-mono truncate">E-mail: fabioxavier@hotmail.com</p>
-                    <p className="text-white text-sm font-mono mt-1">Senha: admin1234</p>
+                    <p className="text-slate-900 dark:text-white text-sm font-mono truncate">E-mail: fabioxavier@hotmail.com</p>
+                    <p className="text-slate-900 dark:text-white text-sm font-mono mt-1">Senha: admin1234</p>
                 </div>
 
                 {status.type === 'error' && (
@@ -66,7 +66,7 @@ const SetupAdmin = () => {
                     onClick={handleCreateAdmin}
                     disabled={status.type === 'loading' || status.type === 'success'}
                     className={`w-full py-4 rounded-2xl font-bold transition-all flex items-center justify-center gap-3 ${status.type === 'success'
-                            ? 'bg-slate-800 text-slate-500 cursor-default'
+                            ? 'bg-slate-100 dark:bg-slate-800 text-slate-500 cursor-default'
                             : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-900/20 active:scale-95'
                         }`}
                 >
@@ -80,7 +80,7 @@ const SetupAdmin = () => {
 
                 <a
                     href="/login"
-                    className="inline-block mt-6 text-slate-500 hover:text-white text-sm font-medium transition-colors"
+                    className="inline-block mt-6 text-slate-500 hover:text-slate-900 dark:text-white text-sm font-medium transition-colors"
                 >
                     Ir para o Login
                 </a>

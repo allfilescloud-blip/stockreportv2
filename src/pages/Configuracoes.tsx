@@ -3,6 +3,7 @@ import { Settings as SettingsIcon, User, Shield, Bell, Database, Info, Check, X,
 import { useAuth } from '../hooks/useAuth';
 import { collection, query, where, onSnapshot, doc, updateDoc, deleteDoc, setDoc, getDoc, getDocs } from 'firebase/firestore';
 import { auth, db } from '../db/firebase';
+import { useTheme } from '../contexts/ThemeContext';
 
 interface PendingUser {
     id: string;
@@ -20,6 +21,7 @@ interface NotificationSettings {
 
 const Configuracoes = () => {
     const { user, isAdmin, allowRegistration: initialAllowReg } = useAuth();
+    const { theme, setTheme } = useTheme();
     const [pendingUsers, setPendingUsers] = useState<PendingUser[]>([]);
     const [allowRegistration, setAllowRegistration] = useState(initialAllowReg);
     const [activeTab, setActiveTab] = useState('Geral');
@@ -271,11 +273,11 @@ const Configuracoes = () => {
     return (
         <div className="p-4 md:p-8 max-w-7xl mx-auto font-sans">
             <div className="mb-8">
-                <h1 className="text-3xl font-bold text-white flex items-center gap-3">
+                <h1 className="text-3xl font-bold text-slate-900 dark:text-white flex items-center gap-3">
                     <SettingsIcon size={32} className="text-blue-500" />
                     Configurações
                 </h1>
-                <p className="text-slate-400">Personalize sua experiência e gerencie o sistema</p>
+                <p className="text-slate-500 dark:text-slate-400">Personalize sua experiência e gerencie o sistema</p>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
@@ -288,11 +290,11 @@ const Configuracoes = () => {
                                 onClick={() => setActiveTab(section.id)}
                                 className={`w-full flex items-center gap-4 p-4 rounded-2xl border transition-all text-left group ${activeTab === section.id
                                     ? 'bg-blue-600 border-blue-500 text-white shadow-lg shadow-blue-900/20'
-                                    : 'bg-slate-900 border-slate-800 text-slate-400 hover:bg-slate-800/50 hover:border-slate-700'
+                                    : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-100/50 dark:bg-slate-800/50 hover:border-slate-300 dark:border-slate-700'
                                     }`}
                             >
                                 <section.icon size={22} className={activeTab === section.id ? 'text-white' : 'group-hover:text-blue-400'} />
-                                <span className={`font-bold ${activeTab === section.id ? 'text-white' : 'text-slate-300'}`}>{section.title}</span>
+                                <span className={`font-bold ${activeTab === section.id ? 'text-slate-900 dark:text-white' : 'text-slate-700 dark:text-slate-300'}`}>{section.title}</span>
                             </button>
                         )
                     ))}
@@ -301,13 +303,13 @@ const Configuracoes = () => {
                 {/* Conteúdo da Aba */}
                 <div className="lg:col-span-3 space-y-6">
                     {activeTab === 'Geral' && (
-                        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8 animate-in fade-in slide-in-from-right-4 duration-300">
+                        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-8 animate-in fade-in slide-in-from-right-4 duration-300">
                             <div className="flex items-center gap-6 mb-8">
                                 <div className="w-24 h-24 bg-blue-600 rounded-2xl flex items-center justify-center text-4xl font-bold text-white uppercase shadow-xl rotate-3 transform transition-transform hover:rotate-0">
                                     {user?.email?.charAt(0)}
                                 </div>
                                 <div>
-                                    <p className="text-white font-bold text-2xl tracking-tight">{user?.email}</p>
+                                    <p className="text-slate-900 dark:text-white font-bold text-2xl tracking-tight">{user?.email}</p>
                                     <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase mt-2 ${isAdmin ? 'bg-amber-500/10 text-amber-500' : 'bg-blue-500/10 text-blue-500'}`}>
                                         <Shield size={12} />
                                         {isAdmin ? 'Administrador' : 'Usuário Padrão'}
@@ -315,7 +317,17 @@ const Configuracoes = () => {
                                 </div>
                             </div>
                             <div className="grid gap-4 max-w-md">
-                                <button className="w-full py-3.5 bg-slate-800 hover:bg-slate-700 text-white rounded-xl font-bold transition-all border border-slate-700">Alterar Senha</button>
+                                <div className="p-4 bg-slate-100/30 dark:bg-slate-800/30 border border-slate-300 dark:border-slate-700 rounded-2xl mb-2">
+                                    <h3 className="text-slate-900 dark:text-white font-bold mb-3 flex items-center gap-2">
+                                        Tema do Sistema
+                                    </h3>
+                                    <div className="grid grid-cols-3 gap-2">
+                                        <button onClick={() => setTheme('light')} className={`py-2 rounded-xl text-sm font-bold border transition-all ${theme === 'light' ? 'bg-blue-600 border-blue-500 text-white' : 'bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:text-white hover:bg-slate-200 dark:bg-slate-700'}`}>Claro</button>
+                                        <button onClick={() => setTheme('dark')} className={`py-2 rounded-xl text-sm font-bold border transition-all ${theme === 'dark' ? 'bg-blue-600 border-blue-500 text-white' : 'bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:text-white hover:bg-slate-200 dark:bg-slate-700'}`}>Escuro</button>
+                                        <button onClick={() => setTheme('system')} className={`py-2 rounded-xl text-sm font-bold border transition-all ${theme === 'system' ? 'bg-blue-600 border-blue-500 text-white' : 'bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:text-white hover:bg-slate-200 dark:bg-slate-700'}`}>Sistema</button>
+                                    </div>
+                                </div>
+                                <button className="w-full py-3.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-white rounded-xl font-bold transition-all border border-slate-300 dark:border-slate-700">Alterar Senha</button>
                                 <button
                                     onClick={() => auth.signOut()}
                                     className="w-full py-3.5 bg-red-500/10 hover:bg-red-500 text-red-500 hover:text-white rounded-xl font-bold transition-all border border-red-500/20"
@@ -328,28 +340,28 @@ const Configuracoes = () => {
 
                     {activeTab === 'Notificações' && (
                         <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
-                            <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8">
-                                <h2 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
+                            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-8">
+                                <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-6 flex items-center gap-2">
                                     <Bell className="text-blue-500" size={24} />
                                     Alertas do Sistema
                                 </h2>
 
                                 <div className="space-y-8">
                                     {/* Alerta de Estoque Baixo */}
-                                    <div className="flex flex-col gap-4 p-4 bg-slate-800/30 rounded-2xl border border-slate-800">
+                                    <div className="flex flex-col gap-4 p-4 bg-slate-100/30 dark:bg-slate-800/30 rounded-2xl border border-slate-200 dark:border-slate-800">
                                         <div className="flex items-center justify-between">
                                             <div className="flex items-center gap-4">
                                                 <div className="p-2 bg-amber-500/10 rounded-xl text-amber-500">
                                                     <Database size={20} />
                                                 </div>
                                                 <div>
-                                                    <h3 className="text-white font-bold">Estoque Baixo</h3>
-                                                    <p className="text-slate-400 text-sm">Receba alertas quando produtos atingirem o limite</p>
+                                                    <h3 className="text-slate-900 dark:text-white font-bold">Estoque Baixo</h3>
+                                                    <p className="text-slate-500 dark:text-slate-400 text-sm">Receba alertas quando produtos atingirem o limite</p>
                                                 </div>
                                             </div>
                                             <button
                                                 onClick={() => updateNotification('lowStock', !notifications.lowStock)}
-                                                className={`w-12 h-6 rounded-full p-1 transition-all duration-300 flex items-center ${notifications.lowStock ? 'bg-blue-600 justify-end' : 'bg-slate-700 justify-start'}`}
+                                                className={`w-12 h-6 rounded-full p-1 transition-all duration-300 flex items-center ${notifications.lowStock ? 'bg-blue-600 justify-end' : 'bg-slate-200 dark:bg-slate-700 justify-start'}`}
                                             >
                                                 <div className="w-4 h-4 bg-white rounded-full shadow-md" />
                                             </button>
@@ -357,12 +369,12 @@ const Configuracoes = () => {
 
                                         {notifications.lowStock && (
                                             <div className="flex items-center gap-4 pl-12 animate-in slide-in-from-top-2 duration-200">
-                                                <span className="text-sm text-slate-400">Notificar quando menor que:</span>
+                                                <span className="text-sm text-slate-500 dark:text-slate-400">Notificar quando menor que:</span>
                                                 <input
                                                     type="number"
                                                     value={notifications.lowStockThreshold}
                                                     onChange={(e) => updateNotification('lowStockThreshold', parseInt(e.target.value))}
-                                                    className="w-20 bg-slate-900 border border-slate-700 rounded-lg px-3 py-1 text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                                    className="w-20 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-1 text-slate-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
                                                 />
                                                 <span className="text-sm text-slate-500 italic">unidades</span>
                                             </div>
@@ -370,19 +382,19 @@ const Configuracoes = () => {
                                     </div>
 
                                     {/* Novos Relatórios */}
-                                    <div className="flex items-center justify-between p-4 bg-slate-800/30 rounded-2xl border border-slate-800">
+                                    <div className="flex items-center justify-between p-4 bg-slate-100/30 dark:bg-slate-800/30 rounded-2xl border border-slate-200 dark:border-slate-800">
                                         <div className="flex items-center gap-4">
                                             <div className="p-2 bg-blue-500/10 rounded-xl text-blue-500">
                                                 <Check size={20} />
                                             </div>
                                             <div>
-                                                <h3 className="text-white font-bold">Novos Relatórios</h3>
-                                                <p className="text-slate-400 text-sm">Alertar quando um novo relatório for finalizado</p>
+                                                <h3 className="text-slate-900 dark:text-white font-bold">Novos Relatórios</h3>
+                                                <p className="text-slate-500 dark:text-slate-400 text-sm">Alertar quando um novo relatório for finalizado</p>
                                             </div>
                                         </div>
                                         <button
                                             onClick={() => updateNotification('newReports', !notifications.newReports)}
-                                            className={`w-12 h-6 rounded-full p-1 transition-all duration-300 flex items-center ${notifications.newReports ? 'bg-blue-600 justify-end' : 'bg-slate-700 justify-start'}`}
+                                            className={`w-12 h-6 rounded-full p-1 transition-all duration-300 flex items-center ${notifications.newReports ? 'bg-blue-600 justify-end' : 'bg-slate-200 dark:bg-slate-700 justify-start'}`}
                                         >
                                             <div className="w-4 h-4 bg-white rounded-full shadow-md" />
                                         </button>
@@ -390,19 +402,19 @@ const Configuracoes = () => {
 
                                     {/* Acessos Pendentes (Admin Only) */}
                                     {isAdmin && (
-                                        <div className="flex items-center justify-between p-4 bg-slate-800/30 rounded-2xl border border-slate-800">
+                                        <div className="flex items-center justify-between p-4 bg-slate-100/30 dark:bg-slate-800/30 rounded-2xl border border-slate-200 dark:border-slate-800">
                                             <div className="flex items-center gap-4">
                                                 <div className="p-2 bg-amber-500/10 rounded-xl text-amber-500">
                                                     <UserPlus size={20} />
                                                 </div>
                                                 <div>
-                                                    <h3 className="text-white font-bold">Acessos Pendentes</h3>
-                                                    <p className="text-slate-400 text-sm">Notificar sobre novos pedidos de cadastro</p>
+                                                    <h3 className="text-slate-900 dark:text-white font-bold">Acessos Pendentes</h3>
+                                                    <p className="text-slate-500 dark:text-slate-400 text-sm">Notificar sobre novos pedidos de cadastro</p>
                                                 </div>
                                             </div>
                                             <button
                                                 onClick={() => updateNotification('pendingAccess', !notifications.pendingAccess)}
-                                                className={`w-12 h-6 rounded-full p-1 transition-all duration-300 flex items-center ${notifications.pendingAccess ? 'bg-blue-600 justify-end' : 'bg-slate-700 justify-start'}`}
+                                                className={`w-12 h-6 rounded-full p-1 transition-all duration-300 flex items-center ${notifications.pendingAccess ? 'bg-blue-600 justify-end' : 'bg-slate-200 dark:bg-slate-700 justify-start'}`}
                                             >
                                                 <div className="w-4 h-4 bg-white rounded-full shadow-md" />
                                             </button>
@@ -410,19 +422,19 @@ const Configuracoes = () => {
                                     )}
 
                                     {/* Notificações por E-mail */}
-                                    <div className="flex items-center justify-between p-4 bg-slate-800/30 rounded-2xl border border-slate-800">
+                                    <div className="flex items-center justify-between p-4 bg-slate-100/30 dark:bg-slate-800/30 rounded-2xl border border-slate-200 dark:border-slate-800">
                                         <div className="flex items-center gap-4">
                                             <div className="p-2 bg-emerald-500/10 rounded-xl text-emerald-500">
                                                 <X size={20} />
                                             </div>
                                             <div>
-                                                <h3 className="text-white font-bold">Alertas por E-mail</h3>
-                                                <p className="text-slate-400 text-sm">Receber um resumo diário em sua caixa de entrada</p>
+                                                <h3 className="text-slate-900 dark:text-white font-bold">Alertas por E-mail</h3>
+                                                <p className="text-slate-500 dark:text-slate-400 text-sm">Receber um resumo diário em sua caixa de entrada</p>
                                             </div>
                                         </div>
                                         <button
                                             onClick={() => updateNotification('emailAlerts', !notifications.emailAlerts)}
-                                            className={`w-12 h-6 rounded-full p-1 transition-all duration-300 flex items-center ${notifications.emailAlerts ? 'bg-blue-600 justify-end' : 'bg-slate-700 justify-start'}`}
+                                            className={`w-12 h-6 rounded-full p-1 transition-all duration-300 flex items-center ${notifications.emailAlerts ? 'bg-blue-600 justify-end' : 'bg-slate-200 dark:bg-slate-700 justify-start'}`}
                                         >
                                             <div className="w-4 h-4 bg-white rounded-full shadow-md" />
                                         </button>
@@ -435,28 +447,28 @@ const Configuracoes = () => {
                     {activeTab === 'Acessos' && isAdmin && (
                         <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
                             {/* Toggle de Registro */}
-                            <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 flex items-center justify-between group">
+                            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 flex items-center justify-between group">
                                 <div className="flex items-center gap-4">
                                     <div className="p-3 bg-blue-500/10 rounded-2xl text-blue-500">
                                         <UserPlus size={24} />
                                     </div>
                                     <div>
-                                        <h3 className="text-white font-bold text-lg">Novos Cadastros</h3>
-                                        <p className="text-slate-400 text-sm">Permitir que novos usuários se cadastrem na tela de login</p>
+                                        <h3 className="text-slate-900 dark:text-white font-bold text-lg">Novos Cadastros</h3>
+                                        <p className="text-slate-500 dark:text-slate-400 text-sm">Permitir que novos usuários se cadastrem na tela de login</p>
                                     </div>
                                 </div>
                                 <button
                                     onClick={handleToggleRegistration}
-                                    className={`w-14 h-8 rounded-full p-1 transition-all duration-300 flex items-center ${allowRegistration ? 'bg-blue-600 justify-end' : 'bg-slate-800 justify-start'}`}
+                                    className={`w-14 h-8 rounded-full p-1 transition-all duration-300 flex items-center ${allowRegistration ? 'bg-blue-600 justify-end' : 'bg-slate-100 dark:bg-slate-800 justify-start'}`}
                                 >
                                     <div className="w-6 h-6 bg-white rounded-full shadow-md" />
                                 </button>
                             </div>
 
                             {/* Lista de Espera */}
-                            <div className="bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden shadow-xl">
-                                <div className="p-6 border-b border-slate-800 flex items-center justify-between">
-                                    <h3 className="text-white font-bold text-lg flex items-center gap-2">
+                            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl overflow-hidden shadow-xl">
+                                <div className="p-6 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+                                    <h3 className="text-slate-900 dark:text-white font-bold text-lg flex items-center gap-2">
                                         <ShieldCheck size={20} className="text-amber-500" />
                                         Aprovações Pendentes
                                     </h3>
@@ -465,20 +477,20 @@ const Configuracoes = () => {
                                 <div className="divide-y divide-slate-800">
                                     {pendingUsers.length === 0 ? (
                                         <div className="p-12 text-center">
-                                            <div className="w-16 h-16 bg-slate-800 rounded-2xl flex items-center justify-center mx-auto mb-4 text-slate-500">
+                                            <div className="w-16 h-16 bg-slate-100 dark:bg-slate-800 rounded-2xl flex items-center justify-center mx-auto mb-4 text-slate-500">
                                                 <UserCheck size={32} />
                                             </div>
                                             <p className="text-slate-500 font-medium">Nenhum usuário aguardando aprovação.</p>
                                         </div>
                                     ) : (
                                         pendingUsers.map((u: PendingUser) => (
-                                            <div key={u.id} className="p-6 flex items-center justify-between hover:bg-slate-800/20 transition-colors">
+                                            <div key={u.id} className="p-6 flex items-center justify-between hover:bg-slate-100/20 dark:bg-slate-800/20 transition-colors">
                                                 <div className="flex items-center gap-4">
-                                                    <div className="w-12 h-12 bg-slate-800 rounded-xl flex items-center justify-center text-slate-400 font-bold">
+                                                    <div className="w-12 h-12 bg-slate-100 dark:bg-slate-800 rounded-xl flex items-center justify-center text-slate-500 dark:text-slate-400 font-bold">
                                                         {u.email.charAt(0).toUpperCase()}
                                                     </div>
                                                     <div>
-                                                        <p className="text-white font-bold">{u.email}</p>
+                                                        <p className="text-slate-900 dark:text-white font-bold">{u.email}</p>
                                                         <p className="text-slate-500 text-xs">Cadastrado em {new Date(u.createdAt).toLocaleDateString('pt-BR')}</p>
                                                     </div>
                                                 </div>
@@ -511,21 +523,21 @@ const Configuracoes = () => {
                     {activeTab === 'Database' && isAdmin && (
                         <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
                             {/* Backup Section */}
-                            <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8">
-                                <h2 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
+                            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-8">
+                                <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-6 flex items-center gap-2">
                                     <Database className="text-blue-500" size={24} />
                                     Backup do Sistema
                                 </h2>
 
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    <div className="p-6 bg-slate-800/30 rounded-2xl border border-slate-800 hover:border-blue-500/30 transition-all group">
+                                    <div className="p-6 bg-slate-100/30 dark:bg-slate-800/30 rounded-2xl border border-slate-200 dark:border-slate-800 hover:border-blue-500/30 transition-all group">
                                         <div className="flex items-center gap-4 mb-4">
                                             <div className="p-3 bg-blue-500/10 rounded-xl text-blue-500 group-hover:scale-110 transition-transform">
                                                 <Download size={24} />
                                             </div>
                                             <div>
-                                                <h3 className="text-white font-bold">Exportar Dados</h3>
-                                                <p className="text-slate-400 text-xs">Baixar backup completo em JSON</p>
+                                                <h3 className="text-slate-900 dark:text-white font-bold">Exportar Dados</h3>
+                                                <p className="text-slate-500 dark:text-slate-400 text-xs">Baixar backup completo em JSON</p>
                                             </div>
                                         </div>
                                         <button
@@ -538,14 +550,14 @@ const Configuracoes = () => {
                                         </button>
                                     </div>
 
-                                    <div className="p-6 bg-slate-800/30 rounded-2xl border border-slate-800 hover:border-emerald-500/30 transition-all group">
+                                    <div className="p-6 bg-slate-100/30 dark:bg-slate-800/30 rounded-2xl border border-slate-200 dark:border-slate-800 hover:border-emerald-500/30 transition-all group">
                                         <div className="flex items-center gap-4 mb-4">
                                             <div className="p-3 bg-emerald-500/10 rounded-xl text-emerald-500 group-hover:scale-110 transition-transform">
                                                 <Upload size={24} />
                                             </div>
                                             <div>
-                                                <h3 className="text-white font-bold">Importar Dados</h3>
-                                                <p className="text-slate-400 text-xs">Restaurar de um arquivo JSON</p>
+                                                <h3 className="text-slate-900 dark:text-white font-bold">Importar Dados</h3>
+                                                <p className="text-slate-500 dark:text-slate-400 text-xs">Restaurar de um arquivo JSON</p>
                                             </div>
                                         </div>
                                         <label className="cursor-pointer">
@@ -566,10 +578,10 @@ const Configuracoes = () => {
                             </div>
 
                             {/* Storage Policy */}
-                            <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8">
+                            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-8">
                                 <div className="flex items-center gap-2 mb-6">
                                     <Trash2 className="text-red-500" size={24} />
-                                    <h2 className="text-xl font-bold text-white">Política de Retenção</h2>
+                                    <h2 className="text-xl font-bold text-slate-900 dark:text-white">Política de Retenção</h2>
                                 </div>
 
                                 <div className="bg-amber-500/10 border border-amber-500/20 p-4 rounded-2xl mb-8 flex items-start gap-4 text-amber-500">
@@ -580,16 +592,16 @@ const Configuracoes = () => {
                                 </div>
 
                                 <div className="grid gap-6">
-                                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-6 bg-slate-800/30 rounded-2xl border border-slate-800">
+                                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-6 bg-slate-100/30 dark:bg-slate-800/30 rounded-2xl border border-slate-200 dark:border-slate-800">
                                         <div>
-                                            <h3 className="text-white font-bold">Período de Retenção</h3>
-                                            <p className="text-slate-400 text-sm">Manter dados dos últimos:</p>
+                                            <h3 className="text-slate-900 dark:text-white font-bold">Período de Retenção</h3>
+                                            <p className="text-slate-500 dark:text-slate-400 text-sm">Manter dados dos últimos:</p>
                                         </div>
                                         <div className="flex items-center gap-2">
                                             <select
                                                 value={purgeDays}
                                                 onChange={(e) => setPurgeDays(Number(e.target.value))}
-                                                className="bg-slate-950 border border-slate-700 rounded-xl px-4 py-2 text-white outline-none focus:ring-2 focus:ring-blue-500 min-w-[120px]"
+                                                className="bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-4 py-2 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500 min-w-[120px]"
                                             >
                                                 <option value={30}>30 Dias</option>
                                                 <option value={90}>90 Dias</option>
@@ -603,7 +615,7 @@ const Configuracoes = () => {
                                         <button
                                             onClick={() => handlePurgeData('reports')}
                                             disabled={isPurging}
-                                            className="p-4 bg-slate-800 hover:bg-red-500/10 border border-slate-700 hover:border-red-500/30 text-slate-300 hover:text-red-400 rounded-2xl transition-all flex flex-col items-center gap-2 text-center group disabled:opacity-50"
+                                            className="p-4 bg-slate-100 dark:bg-slate-800 hover:bg-red-500/10 border border-slate-300 dark:border-slate-700 hover:border-red-500/30 text-slate-700 dark:text-slate-300 hover:text-red-400 rounded-2xl transition-all flex flex-col items-center gap-2 text-center group disabled:opacity-50"
                                         >
                                             <Trash2 size={24} className="group-hover:scale-110 transition-transform" />
                                             <div>
@@ -615,7 +627,7 @@ const Configuracoes = () => {
                                         <button
                                             onClick={() => handlePurgeData('history')}
                                             disabled={isPurging}
-                                            className="p-4 bg-slate-800 hover:bg-red-500/10 border border-slate-700 hover:border-red-500/30 text-slate-300 hover:text-red-400 rounded-2xl transition-all flex flex-col items-center gap-2 text-center group disabled:opacity-50"
+                                            className="p-4 bg-slate-100 dark:bg-slate-800 hover:bg-red-500/10 border border-slate-300 dark:border-slate-700 hover:border-red-500/30 text-slate-700 dark:text-slate-300 hover:text-red-400 rounded-2xl transition-all flex flex-col items-center gap-2 text-center group disabled:opacity-50"
                                         >
                                             <HistoryIcon size={24} className="group-hover:scale-110 transition-transform" />
                                             <div>
@@ -630,12 +642,12 @@ const Configuracoes = () => {
                     )}
 
                     {activeTab === 'Sobre' && (
-                        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-12 text-center animate-in fade-in slide-in-from-right-4 duration-300">
+                        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-12 text-center animate-in fade-in slide-in-from-right-4 duration-300">
                             <Info size={48} className="text-blue-500 mx-auto mb-4 opacity-20" />
-                            <h2 className="text-2xl font-bold text-white mb-2">StockReport Intelligence</h2>
-                            <p className="text-slate-400 mb-6 font-medium">Versão 1.1.0 (PRO)</p>
+                            <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">StockReport Intelligence</h2>
+                            <p className="text-slate-500 dark:text-slate-400 mb-6 font-medium">Versão 1.1.0 (PRO)</p>
                             <div className="max-w-md mx-auto space-y-4">
-                                <div className="p-4 bg-slate-800/50 rounded-2xl border border-slate-800 text-left text-sm text-slate-400">
+                                <div className="p-4 bg-slate-100/50 dark:bg-slate-800/50 rounded-2xl border border-slate-200 dark:border-slate-800 text-left text-sm text-slate-500 dark:text-slate-400">
                                     Sistema avançado de gestão de estoque e auditoria desenvolvido com React e Firebase.
                                 </div>
                                 <p className="text-xs text-slate-500 italic">© 2026 Todos os direitos reservados.</p>
@@ -647,13 +659,13 @@ const Configuracoes = () => {
                 {/* Modal de Confirmação de Rejeição de Usuário */}
                 {showUserDeleteConfirm && (
                     <div className="fixed inset-0 z-[90] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-                        <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl animate-in fade-in zoom-in duration-200">
+                        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl animate-in fade-in zoom-in duration-200">
                             <div className="p-6 text-center">
                                 <div className="w-16 h-16 bg-red-500/10 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4">
                                     <Trash2 size={32} />
                                 </div>
-                                <h2 className="text-xl font-bold text-white mb-2">Rejeitar Acesso?</h2>
-                                <p className="text-slate-400 mb-6 text-sm">
+                                <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Rejeitar Acesso?</h2>
+                                <p className="text-slate-500 dark:text-slate-400 mb-6 text-sm">
                                     Tem certeza que deseja excluir permanentemente este pedido de acesso?
                                 </p>
                                 <div className="flex gap-3">
@@ -662,7 +674,7 @@ const Configuracoes = () => {
                                             setShowUserDeleteConfirm(false);
                                             setUserIdToDelete(null);
                                         }}
-                                        className="flex-1 py-3 text-slate-400 hover:text-white font-semibold transition-colors"
+                                        className="flex-1 py-3 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-white font-semibold transition-colors"
                                     >
                                         Cancelar
                                     </button>
@@ -681,13 +693,13 @@ const Configuracoes = () => {
                 {/* Modal de Confirmação de Importação */}
                 {showImportConfirm && (
                     <div className="fixed inset-0 z-[90] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-                        <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl animate-in fade-in zoom-in duration-200">
+                        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl animate-in fade-in zoom-in duration-200">
                             <div className="p-6 text-center">
                                 <div className="w-16 h-16 bg-amber-500/10 text-amber-500 rounded-full flex items-center justify-center mx-auto mb-4">
                                     <AlertCircle size={32} />
                                 </div>
-                                <h2 className="text-xl font-bold text-white mb-2">Importar Backup?</h2>
-                                <p className="text-slate-400 mb-6 text-sm">
+                                <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Importar Backup?</h2>
+                                <p className="text-slate-500 dark:text-slate-400 mb-6 text-sm">
                                     Atenção: A importação pode sobrescrever dados existentes. Deseja continuar com o arquivo <strong>{importFile?.name}</strong>?
                                 </p>
                                 <div className="flex gap-3">
@@ -696,7 +708,7 @@ const Configuracoes = () => {
                                             setShowImportConfirm(false);
                                             setImportFile(null);
                                         }}
-                                        className="flex-1 py-3 text-slate-400 hover:text-white font-semibold transition-colors"
+                                        className="flex-1 py-3 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-white font-semibold transition-colors"
                                     >
                                         Cancelar
                                     </button>
@@ -715,13 +727,13 @@ const Configuracoes = () => {
                 {/* Modal de Confirmação de Limpeza de Dados */}
                 {showPurgeConfirm && (
                     <div className="fixed inset-0 z-[90] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-                        <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl animate-in fade-in zoom-in duration-200">
+                        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl animate-in fade-in zoom-in duration-200">
                             <div className="p-6 text-center">
                                 <div className="w-16 h-16 bg-red-500/10 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4">
                                     <Trash2 size={32} />
                                 </div>
-                                <h2 className="text-xl font-bold text-white mb-2">Limpar Dados?</h2>
-                                <p className="text-slate-400 mb-6 text-sm">
+                                <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Limpar Dados?</h2>
+                                <p className="text-slate-500 dark:text-slate-400 mb-6 text-sm">
                                     Tem certeza que deseja deletar {purgeType === 'reports' ? 'RELATÓRIOS' : 'HISTÓRICOS'} com mais de {purgeDays} dias? Esta ação é irreversível.
                                 </p>
                                 <div className="flex gap-3">
@@ -730,7 +742,7 @@ const Configuracoes = () => {
                                             setShowPurgeConfirm(false);
                                             setPurgeType(null);
                                         }}
-                                        className="flex-1 py-3 text-slate-400 hover:text-white font-semibold transition-colors"
+                                        className="flex-1 py-3 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-white font-semibold transition-colors"
                                     >
                                         Cancelar
                                     </button>

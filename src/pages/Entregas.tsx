@@ -13,7 +13,7 @@ import {
     deleteDoc
 } from 'firebase/firestore';
 import { db } from '../db/firebase';
-import { Search, Plus, Printer, Trash2, Edit2, X, AlertTriangle, Share2, ClipboardList, Eye, Calculator } from 'lucide-react';
+import { Search, Plus, Printer, Trash2, Edit2, X, AlertTriangle, Share2, ClipboardList, Eye, Calculator, Layers } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -33,6 +33,7 @@ interface Report {
     items: ReportItem[];
     userName?: string;
     notes?: string;
+    title?: string;
 }
 
 const Entregas = () => {
@@ -48,12 +49,14 @@ const Entregas = () => {
     const [duplicateItemIndex, setDuplicateItemIndex] = useState<number | null>(null);
     const [filterDate, setFilterDate] = useState('');
     const [notes, setNotes] = useState('');
+    const [title, setTitle] = useState('');
     const [summingIndex, setSummingIndex] = useState<number | null>(null);
     const [sumValue, setSumValue] = useState<number | string>('');
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [itemIndexToDelete, setItemIndexToDelete] = useState<number | null>(null);
     const [showReportDeleteConfirm, setShowReportDeleteConfirm] = useState(false);
     const [reportIdToDelete, setReportIdToDelete] = useState<string | null>(null);
+    const [selectedReports, setSelectedReports] = useState<string[]>([]);
 
     const skuInputRef = useRef<HTMLInputElement>(null);
     const quantityInputRef = useRef<HTMLInputElement>(null);
@@ -158,6 +161,7 @@ const Entregas = () => {
         if (currentReport) {
             reportRef = doc(db, 'reports', currentReport.id);
             await updateDoc(reportRef, {
+                title: title.trim(),
                 items: reportItems,
                 totalItems: reportItems.length,
                 notes: notes,
@@ -166,6 +170,7 @@ const Entregas = () => {
         } else {
             const newDoc = await addDoc(collection(db, 'reports'), {
                 type: 'delivery',
+                title: title.trim(),
                 items: reportItems,
                 totalItems: reportItems.length,
                 notes: notes,
@@ -192,6 +197,7 @@ const Entregas = () => {
         setIsModalOpen(false);
         setReportItems([]);
         setNotes('');
+        setTitle('');
         setCurrentReport(null);
     };
 
@@ -214,13 +220,14 @@ const Entregas = () => {
     const handleShare = async (report: Report) => {
         const sequentialId = reports.length - reports.findIndex(r => r.id === report.id);
         const dateText = report.createdAt?.toDate ? report.createdAt.toDate().toLocaleString('pt-BR') : 'Processando...';
+        const reportTitle = report.title || `Entrega #${sequentialId}`;
 
         // Criar PDF
         const doc = new jsPDF();
 
         // Cabeçalho do PDF
         doc.setFontSize(20);
-        doc.text(`Registro de Entrega #${sequentialId}`, 15, 20);
+        doc.text(reportTitle, 15, 20);
         doc.setFontSize(10);
         doc.text(`Data: ${dateText}`, 15, 30);
         doc.text(`Total de Itens: ${report.totalItems}`, 150, 30);
@@ -256,7 +263,7 @@ const Entregas = () => {
         const pdfBlob = doc.output('blob');
         const pdfFile = new File([pdfBlob], `entrega_${sequentialId}.pdf`, { type: 'application/pdf' });
 
-        let shareText = `📊 *Registro de Entrega #${sequentialId}*\n📅 *Data:* ${dateText}\n📝 *Itens:* ${report.totalItems}`;
+        let shareText = `📊 *${reportTitle}*\n📅 *Data:* ${dateText}\n📝 *Itens:* ${report.totalItems}`;
         if (report.notes) {
             shareText += `\n\n📝 *Observações:* ${report.notes}`;
         }
@@ -265,7 +272,7 @@ const Entregas = () => {
             try {
                 await navigator.share({
                     files: [pdfFile],
-                    title: `Entrega #${sequentialId}`,
+                    title: reportTitle,
                     text: shareText
                 });
             } catch (error) {
@@ -276,7 +283,7 @@ const Entregas = () => {
         } else if (navigator.share) {
             try {
                 await navigator.share({
-                    title: `Entrega #${sequentialId}`,
+                    title: reportTitle,
                     text: shareText
                 });
             } catch (error) {
@@ -292,10 +299,12 @@ const Entregas = () => {
         const printWindow = window.open('', '_blank');
         if (!printWindow) return;
 
+        const reportTitle = report.title || `Entrega #${sequentialId}`;
+
         const html = `
             <html>
                 <head>
-                    <title>Relatório de Entrega #${sequentialId}</title>
+                    <title>${reportTitle}</title>
                     <style>
                         body { font-family: sans-serif; padding: 20px; color: #333; }
                         table { width: 100%; border-collapse: collapse; margin-top: 20px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
@@ -308,7 +317,7 @@ const Entregas = () => {
                 <body>
                     <div class="header">
                         <div>
-                            <h1>Registro de Entrega #${sequentialId}</h1>
+                            <h1>${reportTitle}</h1>
                             <p>Data: ${report.createdAt?.toDate ? report.createdAt.toDate().toLocaleString('pt-BR') : new Date().toLocaleString('pt-BR')}</p>
                         </div>
                         <div style="text-align: right">
@@ -343,32 +352,87 @@ const Entregas = () => {
         printWindow.document.close();
     };
 
+    const handleToggleSelectReport = (reportId: string) => {
+        setSelectedReports(prev => {
+            if (prev.includes(reportId)) {
+                return prev.filter(id => id !== reportId);
+            }
+            if (prev.length >= 5) {
+                alert('Você pode selecionar no máximo 5 relatórios para unificar.');
+                return prev;
+            }
+            return [...prev, reportId];
+        });
+    };
+
+    const handleMergeAndPrint = () => {
+        if (selectedReports.length < 2) return;
+
+        const reportsToMerge = reports.filter(r => selectedReports.includes(r.id));
+        const mergedItemsMap = new Map<string, ReportItem>();
+
+        reportsToMerge.forEach(report => {
+            report.items.forEach(item => {
+                const existing = mergedItemsMap.get(item.sku);
+                if (existing) {
+                    existing.currentCount += item.currentCount;
+                } else {
+                    mergedItemsMap.set(item.sku, { ...item });
+                }
+            });
+        });
+
+        const mergedItems = Array.from(mergedItemsMap.values());
+
+        const mergedReport: Report = {
+            id: 'unified-' + Date.now().toString(),
+            type: 'delivery',
+            title: `Entregas Unificadas (${selectedReports.length})`,
+            totalItems: mergedItems.length,
+            items: mergedItems,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+            notes: 'Este é um relatório unificado de múltiplas entregas selecionadas no painel. Contém a soma dos SKUs de cada entrega.',
+        };
+
+        handlePrintReport(mergedReport, 0); // O sequentialId 0 vai forçar o uso de report.title
+    };
+
     return (
         <div className="p-4 md:p-8 max-w-full mx-auto">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
                 <div>
-                    <h1 className="text-3xl font-bold text-white">Entregas</h1>
-                    <p className="text-slate-400">Registro de recebimento de itens</p>
+                    <h1 className="text-3xl font-bold text-slate-900 dark:text-white">Entregas</h1>
+                    <p className="text-slate-500 dark:text-slate-400">Registro de recebimento de itens</p>
                 </div>
             </div>
 
-            <div className="flex flex-col md:flex-row gap-4 items-end bg-slate-900 border border-slate-800 p-4 rounded-2xl mb-6 shadow-lg">
+            <div className="flex flex-col md:flex-row gap-4 items-end bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-4 rounded-2xl mb-6 shadow-lg">
                 <div className="flex-1 w-full">
                     <label className="block text-xs font-semibold text-slate-500 uppercase mb-2 ml-1">Filtrar por Dia</label>
                     <input
                         type="date"
-                        className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2 text-white focus:ring-2 focus:ring-purple-500 outline-none transition-all"
+                        className="w-full bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-4 py-2 text-slate-900 dark:text-white focus:ring-2 focus:ring-purple-500 outline-none transition-all"
                         value={filterDate}
                         onChange={(e) => setFilterDate(e.target.value)}
                     />
                 </div>
                 <button
                     onClick={() => setFilterDate('')}
-                    className="px-6 py-2 text-slate-400 hover:text-white transition-colors text-sm font-medium h-[42px]"
+                    className="px-6 py-2 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-white transition-colors text-sm font-medium h-[42px]"
                 >
                     Limpar
                 </button>
-                <div className="hidden md:block h-10 w-px bg-slate-800 mx-2"></div>
+                <div className="hidden md:block h-10 w-px bg-slate-100 dark:bg-slate-800 mx-2"></div>
+                {selectedReports.length > 1 && (
+                    <button
+                        onClick={handleMergeAndPrint}
+                        className="w-full md:w-auto flex items-center justify-center space-x-2 bg-indigo-600 hover:bg-indigo-700 text-white px-8 py-2.5 rounded-xl transition-all shadow-lg shadow-indigo-900/20 font-bold"
+                    >
+                        <Layers size={20} />
+                        <span>Unificar ({selectedReports.length})</span>
+                    </button>
+                )}
                 <button
                     onClick={() => setIsModalOpen(true)}
                     className="w-full md:w-auto flex items-center justify-center space-x-2 bg-purple-600 hover:bg-purple-700 text-white px-8 py-2.5 rounded-xl transition-all shadow-lg shadow-purple-900/20 font-bold"
@@ -378,12 +442,16 @@ const Entregas = () => {
                 </button>
             </div>
 
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-xl">
                 <div className="hidden md:block overflow-x-auto">
                     <table className="w-full text-left">
                         <thead>
-                            <tr className="bg-slate-800/50 text-slate-400 text-sm">
+                            <tr className="bg-slate-200/50 dark:bg-slate-700/50 text-slate-500 dark:text-slate-400 text-sm">
+                                <th className="px-6 py-4 font-semibold w-12">
+                                    <div className="w-4 h-4" /> {/* Spacer for alignment */}
+                                </th>
                                 <th className="px-6 py-4 font-semibold">ID</th>
+                                <th className="px-6 py-4 font-semibold">Título</th>
                                 <th className="px-6 py-4 font-semibold">Criação</th>
                                 <th className="px-6 py-4 font-semibold text-center">Itens</th>
                                 <th className="px-6 py-4 font-semibold text-right">Ações</th>
@@ -392,13 +460,30 @@ const Entregas = () => {
                         <tbody className="divide-y divide-slate-800">
                             {reports.map((report, index) => {
                                 const sequentialId = reports.length - index;
+                                const isSelected = selectedReports.includes(report.id);
                                 return (
-                                    <tr key={report.id} className="hover:bg-slate-800/30 transition-colors">
+                                    <tr key={report.id} className={`transition-colors ${isSelected ? 'bg-indigo-50/50 dark:bg-indigo-900/20' : 'hover:bg-slate-100/30 dark:bg-slate-800/30'}`}>
+                                        <td className="px-6 py-4">
+                                            <input
+                                                type="checkbox"
+                                                checked={isSelected}
+                                                onChange={() => handleToggleSelectReport(report.id)}
+                                                className="w-4 h-4 text-purple-600 rounded border-slate-300 dark:border-slate-700 focus:ring-purple-500 dark:bg-slate-800 cursor-pointer"
+                                            />
+                                        </td>
                                         <td className="px-6 py-4 font-mono text-purple-400">
                                             #{sequentialId}
                                         </td>
-                                        <td className="px-6 py-4 text-slate-300">
-                                            {report.createdAt?.toDate ? report.createdAt.toDate().toLocaleString('pt-BR') : 'Processando...'}
+                                        <td className="px-6 py-4 font-bold text-slate-900 dark:text-white">
+                                            {report.title || <span className="text-slate-400 font-normal">Entrega #{sequentialId}</span>}
+                                        </td>
+                                        <td className="px-6 py-4 text-slate-700 dark:text-slate-300">
+                                            {report.createdAt?.toDate ? (
+                                                <div className="flex flex-col">
+                                                    <span>{report.createdAt.toDate().toLocaleDateString('pt-BR')}</span>
+                                                    <span className="text-xs text-slate-500 font-normal mt-0.5">{report.createdAt.toDate().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
+                                                </div>
+                                            ) : 'Processando...'}
                                         </td>
                                         <td className="px-6 py-4 text-center">
                                             <span className="bg-purple-500/10 text-purple-400 px-3 py-1 rounded-full text-xs font-bold">
@@ -419,21 +504,21 @@ const Entregas = () => {
                                                         setNotes(report.notes || '');
                                                         setIsModalOpen(true);
                                                     }}
-                                                    className="p-2 text-slate-400 hover:text-white hover:bg-slate-700 rounded-lg transition-all"
+                                                    className="p-2 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-white hover:bg-slate-200 dark:bg-slate-700 rounded-lg transition-all"
                                                     title="Editar"
                                                 >
                                                     <Edit2 size={18} />
                                                 </button>
                                                 <button
                                                     onClick={() => handlePrintReport(report, sequentialId)}
-                                                    className="p-2 text-slate-400 hover:text-white hover:bg-slate-700 rounded-lg transition-all"
+                                                    className="p-2 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-white hover:bg-slate-200 dark:bg-slate-700 rounded-lg transition-all"
                                                     title="Imprimir"
                                                 >
                                                     <Printer size={18} />
                                                 </button>
                                                 <button
                                                     onClick={() => deleteReport(report.id)}
-                                                    className="p-2 text-slate-400 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-all"
+                                                    className="p-2 text-slate-500 dark:text-slate-400 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-all"
                                                     title="Excluir"
                                                 >
                                                     <Trash2 size={18} />
@@ -452,12 +537,21 @@ const Entregas = () => {
                     {reports.map((report, index) => {
                         const sequentialId = reports.length - index;
                         const dateText = report.createdAt?.toDate ? report.createdAt.toDate().toLocaleString('pt-BR') : 'Processando...';
+                        const isSelected = selectedReports.includes(report.id);
                         return (
-                            <div key={report.id} className="p-4 space-y-4 hover:bg-slate-800/20 transition-colors">
+                            <div key={report.id} className={`p-4 space-y-4 transition-colors ${isSelected ? 'bg-indigo-50/50 dark:bg-indigo-900/20' : 'hover:bg-slate-100/20 dark:bg-slate-800/20'}`}>
                                 <div className="flex justify-between items-center">
-                                    <div className="space-y-1">
-                                        <p className="font-mono text-purple-400 font-bold">#{sequentialId}</p>
-                                        <p className="text-slate-500 text-[10px]">{dateText}</p>
+                                    <div className="flex items-center gap-3">
+                                        <input
+                                            type="checkbox"
+                                            checked={isSelected}
+                                            onChange={() => handleToggleSelectReport(report.id)}
+                                            className="w-5 h-5 text-purple-600 rounded border-slate-300 dark:border-slate-700 focus:ring-purple-500 dark:bg-slate-800 cursor-pointer"
+                                        />
+                                        <div className="space-y-1">
+                                            <p className="font-mono text-purple-400 font-bold">#{sequentialId}</p>
+                                            <p className="text-slate-500 text-[10px]">{dateText}</p>
+                                        </div>
                                     </div>
                                     <div className="flex items-center gap-2">
                                         {report.notes && (
@@ -471,29 +565,30 @@ const Entregas = () => {
                                     </div>
                                 </div>
 
-                                <div className="flex items-center justify-between pt-2 border-t border-slate-800/50">
+                                <div className="flex items-center justify-between pt-2 border-t border-slate-200/50 dark:border-slate-800/50">
                                     <div className="flex gap-2">
                                         <button
                                             onClick={() => {
                                                 setCurrentReport(report);
                                                 setReportItems(report.items);
                                                 setNotes(report.notes || '');
+                                                setTitle(report.title || '');
                                                 setIsModalOpen(true);
                                             }}
-                                            className="flex items-center gap-1.5 px-3 py-2 bg-slate-800 text-slate-300 rounded-lg text-xs font-bold border border-slate-700"
+                                            className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg text-xs font-bold border border-slate-300 dark:border-slate-700"
                                         >
                                             <Edit2 size={14} />
                                             Editar
                                         </button>
                                         <button
                                             onClick={() => handlePrintReport(report, sequentialId)}
-                                            className="px-3 py-2 bg-slate-800 text-slate-300 rounded-lg border border-slate-700"
+                                            className="px-3 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg border border-slate-300 dark:border-slate-700"
                                         >
                                             <Printer size={14} />
                                         </button>
                                         <button
                                             onClick={() => deleteReport(report.id)}
-                                            className="px-3 py-2 bg-slate-800 text-red-400 rounded-lg border border-slate-700"
+                                            className="px-3 py-2 bg-slate-100 dark:bg-slate-800 text-red-400 rounded-lg border border-slate-300 dark:border-slate-700"
                                         >
                                             <Trash2 size={14} />
                                         </button>
@@ -518,16 +613,22 @@ const Entregas = () => {
 
             {isModalOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-2 bg-black/80 backdrop-blur-md">
-                    <div className="bg-slate-950 border border-slate-800 rounded-2xl w-full max-w-4xl max-h-[95vh] flex flex-col shadow-2xl overflow-hidden">
-                        <div className="p-4 md:p-6 border-b border-slate-800 flex justify-between items-center bg-slate-900/50">
-                            <h2 className="text-xl md:text-2xl font-bold text-white truncate px-2">{currentReport ? `Editando Entrega #${reports.length - reports.findIndex(r => r.id === currentReport.id)}` : 'Novo Registro de Entrega'}</h2>
-                            <button onClick={() => { setIsModalOpen(false); setReportItems([]); setNotes(''); setCurrentReport(null); }} className="text-slate-400 hover:text-white">
+                    <div className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-4xl max-h-[95vh] flex flex-col shadow-2xl overflow-hidden">
+                        <div className="p-4 md:p-6 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-white/50 dark:bg-slate-900/50 gap-4">
+                            <input
+                                type="text"
+                                value={title}
+                                onChange={(e) => setTitle(e.target.value)}
+                                placeholder={currentReport ? `Entrega #${reports.length - reports.findIndex(r => r.id === currentReport.id)}` : `Entrega #${reports.length + 1}`}
+                                className="flex-1 text-xl md:text-2xl font-bold text-slate-900 dark:text-white bg-transparent border-none outline-none focus:ring-0 px-2 placeholder-slate-400 dark:placeholder-slate-600 truncate"
+                            />
+                            <button onClick={() => { setIsModalOpen(false); setReportItems([]); setNotes(''); setTitle(''); setCurrentReport(null); }} className="text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-white shrink-0">
                                 <X size={24} />
                             </button>
                         </div>
 
                         <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6">
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-slate-900/50 p-4 rounded-xl border border-slate-800">
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-white/50 dark:bg-slate-900/50 p-4 rounded-xl border border-slate-200 dark:border-slate-800">
                                 <div className="md:col-span-2 relative">
                                     <label className="block text-xs font-semibold text-slate-500 uppercase mb-2 ml-1">Produto</label>
                                     <div className="relative">
@@ -536,7 +637,7 @@ const Entregas = () => {
                                             type="text"
                                             ref={skuInputRef}
                                             autoFocus
-                                            className="w-full pl-10 pr-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-white focus:ring-2 focus:ring-purple-500 outline-none transition-all"
+                                            className="w-full pl-10 pr-4 py-3 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white focus:ring-2 focus:ring-purple-500 outline-none transition-all"
                                             value={selectedProduct ? `${selectedProduct.sku} - ${selectedProduct.description}` : searchTerm}
                                             onChange={(e) => !selectedProduct && handleSearchProduct(e.target.value)}
                                             readOnly={!!selectedProduct}
@@ -550,7 +651,7 @@ const Entregas = () => {
                                                     setProducts([]);
                                                     skuInputRef.current?.focus();
                                                 }}
-                                                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
+                                                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-900 dark:text-white"
                                             >
                                                 <X size={18} />
                                             </button>
@@ -558,7 +659,7 @@ const Entregas = () => {
                                     </div>
 
                                     {products.length > 0 && !selectedProduct && (
-                                        <div className="absolute z-10 w-full mt-1 bg-slate-800 border border-slate-700 rounded-lg shadow-xl max-h-48 overflow-y-auto border-t-0 rounded-t-none">
+                                        <div className="absolute z-10 w-full mt-1 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg shadow-xl max-h-48 overflow-y-auto border-t-0 rounded-t-none">
                                             {products.map(p => (
                                                 <div
                                                     key={p.id}
@@ -567,10 +668,10 @@ const Entregas = () => {
                                                         setProducts([]);
                                                         setTimeout(() => quantityInputRef.current?.focus(), 10);
                                                     }}
-                                                    className="p-3 hover:bg-slate-700 cursor-pointer border-b border-slate-700 last:border-0"
+                                                    className="p-3 hover:bg-slate-200 dark:bg-slate-700 cursor-pointer border-b border-slate-300 dark:border-slate-700 last:border-0"
                                                 >
                                                     <p className="font-mono text-purple-400 text-sm">{p.sku}</p>
-                                                    <p className="text-slate-300 text-xs truncate">{p.description}</p>
+                                                    <p className="text-slate-700 dark:text-slate-300 text-xs truncate">{p.description}</p>
                                                 </div>
                                             ))}
                                         </div>
@@ -584,7 +685,7 @@ const Entregas = () => {
                                             type="number"
                                             ref={quantityInputRef}
                                             placeholder="0"
-                                            className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-white focus:ring-2 focus:ring-purple-500 outline-none no-spinner"
+                                            className="w-full px-4 py-3 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white focus:ring-2 focus:ring-purple-500 outline-none no-spinner"
                                             value={quantity}
                                             onChange={(e) => setQuantity(e.target.value === '' ? '' : Number(e.target.value))}
                                         />
@@ -595,7 +696,7 @@ const Entregas = () => {
                                 </div>
                             </div>
 
-                            <div className="bg-slate-900 border border-slate-800 rounded-xl p-3">
+                            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3">
                                 <div className="flex justify-between items-center mb-1.5 ml-1">
                                     <label className="block text-[10px] font-bold text-slate-500 uppercase">Observações (Opcional)</label>
                                     <span className={`text-[10px] font-bold ${notes.length >= 45 ? 'text-amber-500' : 'text-slate-600'}`}>
@@ -608,25 +709,25 @@ const Entregas = () => {
                                     onChange={(e) => setNotes(e.target.value.slice(0, 50))}
                                     maxLength={50}
                                     placeholder="Ex: NF #1234, entregador Fulano..."
-                                    className="w-full bg-slate-800/50 border border-slate-700 rounded-lg px-3 py-2 text-white text-sm focus:ring-2 focus:ring-purple-500 outline-none transition-all"
+                                    className="w-full bg-slate-100/50 dark:bg-slate-800/50 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-2 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-purple-500 outline-none transition-all"
                                 />
                             </div>
 
                             <div className="space-y-4">
-                                <h3 className="text-sm font-semibold text-slate-400 uppercase flex items-center gap-2">
+                                <h3 className="text-sm font-semibold text-slate-500 dark:text-slate-400 uppercase flex items-center gap-2">
                                     <ClipboardList size={16} />
                                     Itens na Entrega ({reportItems.length})
                                 </h3>
-                                <div className="hidden md:block overflow-x-auto rounded-xl border border-slate-800">
+                                <div className="hidden md:block overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
                                     <table className="w-full text-left text-sm">
-                                        <thead className="bg-slate-900 text-slate-500 uppercase text-[10px] tracking-wider">
+                                        <thead className="bg-white dark:bg-slate-900 text-slate-500 uppercase text-[10px] tracking-wider">
                                             <tr>
                                                 <th className="px-6 py-3">Produto</th>
                                                 <th className="px-6 py-3 text-center">Quantidade</th>
                                                 <th className="px-6 py-3"></th>
                                             </tr>
                                         </thead>
-                                        <tbody className="divide-y divide-slate-800 bg-slate-900/30">
+                                        <tbody className="divide-y divide-slate-800 bg-white/30 dark:bg-slate-900/30">
                                             {reportItems
                                                 .filter(i =>
                                                     i.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -635,12 +736,12 @@ const Entregas = () => {
                                                 .map((item, idx) => {
                                                     const originalIndex = reportItems.findIndex(ri => ri === item);
                                                     return (
-                                                        <tr key={idx} className="hover:bg-slate-800/10 transition-colors">
+                                                        <tr key={idx} className="hover:bg-slate-100/10 dark:bg-slate-800/10 transition-colors">
                                                             <td className="px-6 py-4">
                                                                 <p className="font-mono text-purple-400">{item.sku}</p>
                                                                 <p className="text-slate-500 text-xs truncate max-w-[150px] md:max-w-[300px]">{item.description}</p>
                                                             </td>
-                                                            <td className="px-6 py-4 text-center font-bold text-white">{item.currentCount}</td>
+                                                            <td className="px-6 py-4 text-center font-bold text-slate-900 dark:text-white">{item.currentCount}</td>
                                                             <td className="px-6 py-4 text-right">
                                                                 <div className="flex justify-end gap-2">
                                                                     <button
@@ -687,11 +788,11 @@ const Entregas = () => {
                                         .map((item, idx) => {
                                             const originalIndex = reportItems.findIndex(ri => ri === item);
                                             return (
-                                                <div key={idx} className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex justify-between items-center shadow-sm">
+                                                <div key={idx} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 flex justify-between items-center shadow-sm">
                                                     <div className="flex-1 min-w-0 pr-4">
                                                         <p className="font-mono text-purple-400 font-bold text-sm truncate">{item.sku}</p>
                                                         <p className="text-slate-500 text-[10px] truncate">{item.description}</p>
-                                                        <div className="mt-2 text-white font-bold text-sm">
+                                                        <div className="mt-2 text-slate-900 dark:text-white font-bold text-sm">
                                                             Qtd: {item.currentCount}
                                                         </div>
                                                     </div>
@@ -719,7 +820,7 @@ const Entregas = () => {
                                             );
                                         })}
                                     {reportItems.length === 0 && (
-                                        <div className="py-8 text-center text-slate-500 italic text-sm border-2 border-dashed border-slate-800 rounded-xl">
+                                        <div className="py-8 text-center text-slate-500 italic text-sm border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-xl">
                                             Nenhum item adicionado
                                         </div>
                                     )}
@@ -727,8 +828,8 @@ const Entregas = () => {
                             </div>
                         </div>
 
-                        <div className="p-6 border-t border-slate-800 bg-slate-900/50 flex flex-col md:flex-row justify-end gap-3 md:gap-4">
-                            <button onClick={() => { setIsModalOpen(false); setReportItems([]); setNotes(''); setCurrentReport(null); }} className="order-2 md:order-1 px-6 py-2 text-slate-400 hover:text-white transition-colors">Cancelar</button>
+                        <div className="p-6 border-t border-slate-200 dark:border-slate-800 bg-white/50 dark:bg-slate-900/50 flex flex-col md:flex-row justify-end gap-3 md:gap-4">
+                            <button onClick={() => { setIsModalOpen(false); setReportItems([]); setNotes(''); setTitle(''); setCurrentReport(null); }} className="order-2 md:order-1 px-6 py-2 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-white transition-colors">Cancelar</button>
                             <button onClick={saveReport} disabled={reportItems.length === 0} className="order-1 md:order-2 px-8 py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white font-bold rounded-xl transition-all shadow-lg active:scale-95">Finalizar</button>
                         </div>
                     </div>
@@ -738,13 +839,13 @@ const Entregas = () => {
             {/* Modal de Confirmação de Duplicidade */}
             {showConfirmModal && (
                 <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-                    <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl animate-in fade-in zoom-in duration-200">
+                    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl animate-in fade-in zoom-in duration-200">
                         <div className="p-6 text-center">
                             <div className="w-16 h-16 bg-amber-500/10 text-amber-500 rounded-full flex items-center justify-center mx-auto mb-4">
                                 <AlertTriangle size={32} />
                             </div>
-                            <h2 className="text-xl font-bold text-white mb-2">Item Já Adicionado</h2>
-                            <p className="text-slate-400 mb-6 text-sm">
+                            <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Item Já Adicionado</h2>
+                            <p className="text-slate-500 dark:text-slate-400 mb-6 text-sm">
                                 Este SKU já está na lista da entrega. Deseja atualizar a quantidade para o novo valor informado?
                             </p>
                             <div className="flex gap-3">
@@ -753,7 +854,7 @@ const Entregas = () => {
                                         setShowConfirmModal(false);
                                         setDuplicateItemIndex(null);
                                     }}
-                                    className="flex-1 py-3 text-slate-400 hover:text-white font-semibold transition-colors"
+                                    className="flex-1 py-3 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-white font-semibold transition-colors"
                                 >
                                     Cancelar
                                 </button>
@@ -772,13 +873,13 @@ const Entregas = () => {
             {/* Modal de Soma */}
             {summingIndex !== null && (
                 <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-                    <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl animate-in fade-in zoom-in duration-200">
+                    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl animate-in fade-in zoom-in duration-200">
                         <div className="p-6 text-center">
                             <div className="w-16 h-16 bg-emerald-500/10 text-emerald-500 rounded-full flex items-center justify-center mx-auto mb-4">
                                 <Calculator size={32} />
                             </div>
-                            <h2 className="text-xl font-bold text-white mb-2">Somar Quantidade</h2>
-                            <p className="text-slate-400 mb-6 text-sm">
+                            <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Somar Quantidade</h2>
+                            <p className="text-slate-500 dark:text-slate-400 mb-6 text-sm">
                                 Informe o valor para somar ao item <strong>{reportItems[summingIndex].sku}</strong>.
                                 <br />
                                 Atual: {reportItems[summingIndex].currentCount}
@@ -788,7 +889,7 @@ const Entregas = () => {
                                 ref={sumInputRef}
                                 autoFocus
                                 placeholder="Valor a somar (ex: 10)"
-                                className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-white mb-6 focus:ring-2 focus:ring-emerald-500 outline-none no-spinner"
+                                className="w-full px-4 py-3 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white mb-6 focus:ring-2 focus:ring-emerald-500 outline-none no-spinner"
                                 value={sumValue}
                                 onChange={(e) => setSumValue(e.target.value === '' ? '' : Number(e.target.value))}
                                 onKeyDown={(e) => e.key === 'Enter' && handleSum()}
@@ -799,7 +900,7 @@ const Entregas = () => {
                                         setSummingIndex(null);
                                         setSumValue('');
                                     }}
-                                    className="flex-1 py-3 text-slate-400 hover:text-white font-semibold transition-colors"
+                                    className="flex-1 py-3 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-white font-semibold transition-colors"
                                 >
                                     Cancelar
                                 </button>
@@ -819,13 +920,13 @@ const Entregas = () => {
             {/* Modal de Confirmação de Exclusão de Item */}
             {showDeleteConfirm && (
                 <div className="fixed inset-0 z-[90] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-                    <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl animate-in fade-in zoom-in duration-200">
+                    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl animate-in fade-in zoom-in duration-200">
                         <div className="p-6 text-center">
                             <div className="w-16 h-16 bg-red-500/10 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4">
                                 <Trash2 size={32} />
                             </div>
-                            <h2 className="text-xl font-bold text-white mb-2">Remover Item?</h2>
-                            <p className="text-slate-400 mb-6 text-sm">
+                            <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Remover Item?</h2>
+                            <p className="text-slate-500 dark:text-slate-400 mb-6 text-sm">
                                 Tem certeza que deseja remover este item da entrega? Esta ação não pode ser desfeita.
                             </p>
                             <div className="flex gap-3">
@@ -834,7 +935,7 @@ const Entregas = () => {
                                         setShowDeleteConfirm(false);
                                         setItemIndexToDelete(null);
                                     }}
-                                    className="flex-1 py-3 text-slate-400 hover:text-white font-semibold transition-colors"
+                                    className="flex-1 py-3 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-white font-semibold transition-colors"
                                 >
                                     Cancelar
                                 </button>
@@ -859,13 +960,13 @@ const Entregas = () => {
             {/* Modal de Confirmação de Exclusão de Relatório */}
             {showReportDeleteConfirm && (
                 <div className="fixed inset-0 z-[90] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-                    <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl animate-in fade-in zoom-in duration-200">
+                    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl animate-in fade-in zoom-in duration-200">
                         <div className="p-6 text-center">
                             <div className="w-16 h-16 bg-red-500/10 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4">
                                 <Trash2 size={32} />
                             </div>
-                            <h2 className="text-xl font-bold text-white mb-2">Excluir Relatório?</h2>
-                            <p className="text-slate-400 mb-6 text-sm">
+                            <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Excluir Relatório?</h2>
+                            <p className="text-slate-500 dark:text-slate-400 mb-6 text-sm">
                                 Tem certeza que deseja apagar este relatório de entrega permanentemente?
                             </p>
                             <div className="flex gap-3">
@@ -874,7 +975,7 @@ const Entregas = () => {
                                         setShowReportDeleteConfirm(false);
                                         setReportIdToDelete(null);
                                     }}
-                                    className="flex-1 py-3 text-slate-400 hover:text-white font-semibold transition-colors"
+                                    className="flex-1 py-3 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-white font-semibold transition-colors"
                                 >
                                     Cancelar
                                 </button>

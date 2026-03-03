@@ -33,6 +33,7 @@ interface Report {
     totalItems: number;
     items: ReportItem[];
     userName?: string;
+    title?: string;
 }
 
 const Testados = () => {
@@ -43,6 +44,7 @@ const Testados = () => {
     const [reportItems, setReportItems] = useState<ReportItem[]>([]);
     const [selectedProduct, setSelectedProduct] = useState<any>(null);
     const [quantity, setQuantity] = useState<number | string>('');
+    const [title, setTitle] = useState('');
     const [currentReport, setCurrentReport] = useState<Report | null>(null);
     const [showConfirmModal, setShowConfirmModal] = useState(false);
     const [duplicateItemIndex, setDuplicateItemIndex] = useState<number | null>(null);
@@ -172,6 +174,7 @@ const Testados = () => {
         if (currentReport) {
             reportRef = doc(db, 'reports', currentReport.id);
             await updateDoc(reportRef, {
+                title: title.trim(),
                 items: reportItems,
                 totalItems: reportItems.length,
                 updatedAt: serverTimestamp()
@@ -179,6 +182,7 @@ const Testados = () => {
         } else {
             const newDoc = await addDoc(collection(db, 'reports'), {
                 type: 'tested',
+                title: title.trim(),
                 items: reportItems,
                 totalItems: reportItems.length,
                 createdAt: serverTimestamp(),
@@ -203,6 +207,7 @@ const Testados = () => {
 
         setIsModalOpen(false);
         setReportItems([]);
+        setTitle('');
         setCurrentReport(null);
     };
 
@@ -225,13 +230,14 @@ const Testados = () => {
     const handleShare = async (report: Report) => {
         const sequentialId = reports.length - reports.findIndex(r => r.id === report.id);
         const dateText = report.createdAt?.toDate ? report.createdAt.toDate().toLocaleString('pt-BR') : 'Processando...';
+        const reportTitle = report.title || `Testados #${sequentialId}`;
 
         // Criar PDF
         const doc = new jsPDF();
 
         // Cabeçalho do PDF
         doc.setFontSize(20);
-        doc.text(`Relatório de Testados #${sequentialId}`, 15, 20);
+        doc.text(reportTitle, 15, 20);
         doc.setFontSize(10);
         doc.text(`Data: ${dateText}`, 15, 30);
         doc.text(`Total de Itens: ${report.totalItems}`, 150, 30);
@@ -262,13 +268,13 @@ const Testados = () => {
         const pdfBlob = doc.output('blob');
         const pdfFile = new File([pdfBlob], `testados_${sequentialId}.pdf`, { type: 'application/pdf' });
 
-        const shareText = `📊 *Relatório de Testados #${sequentialId}*\n📅 *Data:* ${dateText}\n📝 *Itens:* ${report.totalItems}`;
+        const shareText = `📊 *${reportTitle}*\n📅 *Data:* ${dateText}\n📝 *Itens:* ${report.totalItems}`;
 
         if (navigator.share && navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
             try {
                 await navigator.share({
                     files: [pdfFile],
-                    title: `Testados #${sequentialId}`,
+                    title: reportTitle,
                     text: shareText
                 });
             } catch (error) {
@@ -279,7 +285,7 @@ const Testados = () => {
         } else if (navigator.share) {
             try {
                 await navigator.share({
-                    title: `Testados #${sequentialId}`,
+                    title: reportTitle,
                     text: shareText
                 });
             } catch (error) {
@@ -295,10 +301,12 @@ const Testados = () => {
         const printWindow = window.open('', '_blank');
         if (!printWindow) return;
 
+        const reportTitle = report.title || `Testados #${sequentialId}`;
+
         const html = `
             <html>
                 <head>
-                    <title>Relatório de Testados #${sequentialId}</title>
+                    <title>${reportTitle}</title>
                     <style>
                         body { font-family: sans-serif; padding: 20px; color: #333; }
                         table { width: 100%; border-collapse: collapse; margin-top: 20px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
@@ -313,7 +321,7 @@ const Testados = () => {
                 <body>
                     <div class="header">
                         <div>
-                            <h1>Produtos Testados #${sequentialId}</h1>
+                            <h1>${reportTitle}</h1>
                             <p>Data: ${report.createdAt?.toDate ? report.createdAt.toDate().toLocaleString('pt-BR') : new Date().toLocaleString('pt-BR')}</p>
                         </div>
                         <div style="text-align: right">
@@ -358,28 +366,28 @@ const Testados = () => {
         <div className="p-4 md:p-8 max-w-full mx-auto">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
                 <div>
-                    <h1 className="text-3xl font-bold text-white">Produtos Testados</h1>
-                    <p className="text-slate-400">Contagem e comparação de itens validados</p>
+                    <h1 className="text-3xl font-bold text-slate-900 dark:text-white">Produtos Testados</h1>
+                    <p className="text-slate-500 dark:text-slate-400">Contagem e comparação de itens validados</p>
                 </div>
             </div>
 
-            <div className="flex flex-col md:flex-row gap-4 items-end bg-slate-900 border border-slate-800 p-4 rounded-2xl mb-6 shadow-lg">
+            <div className="flex flex-col md:flex-row gap-4 items-end bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 p-4 rounded-2xl mb-6 shadow-lg">
                 <div className="flex-1 w-full">
                     <label className="block text-xs font-semibold text-slate-500 uppercase mb-2 ml-1">Filtrar por Dia</label>
                     <input
                         type="date"
-                        className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2 text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                        className="w-full bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-4 py-2 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all"
                         value={filterDate}
                         onChange={(e) => setFilterDate(e.target.value)}
                     />
                 </div>
                 <button
                     onClick={() => setFilterDate('')}
-                    className="px-6 py-2 text-slate-400 hover:text-white transition-colors text-sm font-medium h-[42px]"
+                    className="px-6 py-2 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-white transition-colors text-sm font-medium h-[42px]"
                 >
                     Limpar
                 </button>
-                <div className="hidden md:block h-10 w-px bg-slate-800 mx-2"></div>
+                <div className="hidden md:block h-10 w-px bg-slate-100 dark:bg-slate-800 mx-2"></div>
                 <button
                     onClick={() => setIsModalOpen(true)}
                     className="w-full md:w-auto flex items-center justify-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white px-8 py-2.5 rounded-xl transition-all shadow-lg shadow-blue-900/20 font-bold"
@@ -389,12 +397,13 @@ const Testados = () => {
                 </button>
             </div>
 
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-xl">
+            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-xl">
                 <div className="hidden md:block overflow-x-auto">
                     <table className="w-full text-left">
                         <thead>
-                            <tr className="bg-slate-800/50 text-slate-400 text-sm">
+                            <tr className="bg-slate-200/50 dark:bg-slate-700/50 text-slate-500 dark:text-slate-400 text-sm">
                                 <th className="px-6 py-4 font-semibold">ID</th>
+                                <th className="px-6 py-4 font-semibold">Título</th>
                                 <th className="px-6 py-4 font-semibold">Criação</th>
                                 <th className="px-6 py-4 font-semibold">Alteração</th>
                                 <th className="px-6 py-4 font-semibold text-center">Itens</th>
@@ -405,13 +414,26 @@ const Testados = () => {
                             {reports.map((report, index) => {
                                 const sequentialId = reports.length - index;
                                 return (
-                                    <tr key={report.id} className="hover:bg-slate-800/30 transition-colors">
+                                    <tr key={report.id} className="hover:bg-slate-100/30 dark:bg-slate-800/30 transition-colors">
                                         <td className="px-6 py-4 font-mono text-blue-400">#{sequentialId}</td>
-                                        <td className="px-6 py-4 text-slate-300">
-                                            {report.createdAt?.toDate ? report.createdAt.toDate().toLocaleString('pt-BR') : 'Processando...'}
+                                        <td className="px-6 py-4 font-bold text-slate-900 dark:text-white">
+                                            {report.title || <span className="text-slate-400 font-normal">Testados #{sequentialId}</span>}
                                         </td>
-                                        <td className="px-6 py-4 text-slate-400 text-sm">
-                                            {report.updatedAt?.toDate ? report.updatedAt.toDate().toLocaleString('pt-BR') : '-'}
+                                        <td className="px-6 py-4 text-slate-700 dark:text-slate-300">
+                                            {report.createdAt?.toDate ? (
+                                                <div className="flex flex-col">
+                                                    <span>{report.createdAt.toDate().toLocaleDateString('pt-BR')}</span>
+                                                    <span className="text-xs text-slate-500 font-normal mt-0.5">{report.createdAt.toDate().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
+                                                </div>
+                                            ) : 'Processando...'}
+                                        </td>
+                                        <td className="px-6 py-4 text-slate-500 dark:text-slate-400 text-sm">
+                                            {report.updatedAt?.toDate ? (
+                                                <div className="flex flex-col">
+                                                    <span>{report.updatedAt.toDate().toLocaleDateString('pt-BR')}</span>
+                                                    <span className="text-xs font-normal mt-0.5">{report.updatedAt.toDate().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
+                                                </div>
+                                            ) : '-'}
                                         </td>
                                         <td className="px-6 py-4 text-center">
                                             <span className="bg-blue-500/10 text-blue-400 px-3 py-1 rounded-full text-xs font-bold">
@@ -424,23 +446,24 @@ const Testados = () => {
                                                     onClick={() => {
                                                         setCurrentReport(report);
                                                         setReportItems(report.items);
+                                                        setTitle(report.title || '');
                                                         setIsModalOpen(true);
                                                     }}
-                                                    className="p-2 text-slate-400 hover:text-white hover:bg-slate-700 rounded-lg transition-all"
+                                                    className="p-2 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-white hover:bg-slate-200 dark:bg-slate-700 rounded-lg transition-all"
                                                     title="Editar"
                                                 >
                                                     <Edit2 size={18} />
                                                 </button>
                                                 <button
                                                     onClick={() => handlePrintReport(report, sequentialId)}
-                                                    className="p-2 text-slate-400 hover:text-white hover:bg-slate-700 rounded-lg transition-all"
+                                                    className="p-2 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-white hover:bg-slate-200 dark:bg-slate-700 rounded-lg transition-all"
                                                     title="Imprimir"
                                                 >
                                                     <Printer size={18} />
                                                 </button>
                                                 <button
                                                     onClick={() => deleteReport(report.id)}
-                                                    className="p-2 text-slate-400 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-all"
+                                                    className="p-2 text-slate-500 dark:text-slate-400 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-all"
                                                     title="Excluir"
                                                 >
                                                     <Trash2 size={18} />
@@ -460,7 +483,7 @@ const Testados = () => {
                         const sequentialId = reports.length - index;
                         const dateText = report.createdAt?.toDate ? report.createdAt.toDate().toLocaleString('pt-BR') : 'Processando...';
                         return (
-                            <div key={report.id} className="p-4 space-y-4 hover:bg-slate-800/20 transition-colors">
+                            <div key={report.id} className="p-4 space-y-4 hover:bg-slate-100/20 dark:bg-slate-800/20 transition-colors">
                                 <div className="flex justify-between items-center">
                                     <div className="space-y-1">
                                         <p className="font-mono text-blue-400 font-bold">#{sequentialId}</p>
@@ -471,28 +494,29 @@ const Testados = () => {
                                     </span>
                                 </div>
 
-                                <div className="flex items-center justify-between pt-2 border-t border-slate-800/50">
+                                <div className="flex items-center justify-between pt-2 border-t border-slate-200/50 dark:border-slate-800/50">
                                     <div className="flex gap-2">
                                         <button
                                             onClick={() => {
                                                 setCurrentReport(report);
                                                 setReportItems(report.items);
+                                                setTitle(report.title || '');
                                                 setIsModalOpen(true);
                                             }}
-                                            className="flex items-center gap-1.5 px-3 py-2 bg-slate-800 text-slate-300 rounded-lg text-xs font-bold border border-slate-700"
+                                            className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg text-xs font-bold border border-slate-300 dark:border-slate-700"
                                         >
                                             <Edit2 size={14} />
                                             Editar
                                         </button>
                                         <button
                                             onClick={() => handlePrintReport(report, sequentialId)}
-                                            className="px-3 py-2 bg-slate-800 text-slate-300 rounded-lg border border-slate-700"
+                                            className="px-3 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg border border-slate-300 dark:border-slate-700"
                                         >
                                             <Printer size={14} />
                                         </button>
                                         <button
                                             onClick={() => deleteReport(report.id)}
-                                            className="px-3 py-2 bg-slate-800 text-red-400 rounded-lg border border-slate-700"
+                                            className="px-3 py-2 bg-slate-100 dark:bg-slate-800 text-red-400 rounded-lg border border-slate-300 dark:border-slate-700"
                                         >
                                             <Trash2 size={14} />
                                         </button>
@@ -517,16 +541,22 @@ const Testados = () => {
 
             {isModalOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-2 bg-black/80 backdrop-blur-md">
-                    <div className="bg-slate-950 border border-slate-800 rounded-2xl w-full max-w-4xl max-h-[95vh] flex flex-col shadow-2xl overflow-hidden">
-                        <div className="p-4 md:p-6 border-b border-slate-800 flex justify-between items-center bg-slate-900/50">
-                            <h2 className="text-xl md:text-2xl font-bold text-white truncate px-2">{currentReport ? `Editando Relatório #${reports.length - reports.findIndex(r => r.id === currentReport.id)}` : 'Novo Relatório (Testados)'}</h2>
-                            <button onClick={() => { setIsModalOpen(false); setReportItems([]); setCurrentReport(null); }} className="text-slate-400 hover:text-white">
+                    <div className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-4xl max-h-[95vh] flex flex-col shadow-2xl overflow-hidden">
+                        <div className="p-4 md:p-6 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-white/50 dark:bg-slate-900/50 gap-4">
+                            <input
+                                type="text"
+                                value={title}
+                                onChange={(e) => setTitle(e.target.value)}
+                                placeholder={currentReport ? `Testados #${reports.length - reports.findIndex(r => r.id === currentReport.id)}` : `Testados #${reports.length + 1}`}
+                                className="flex-1 text-xl md:text-2xl font-bold text-slate-900 dark:text-white bg-transparent border-none outline-none focus:ring-0 px-2 placeholder-slate-400 dark:placeholder-slate-600 truncate"
+                            />
+                            <button onClick={() => { setIsModalOpen(false); setReportItems([]); setTitle(''); setCurrentReport(null); }} className="text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-white shrink-0">
                                 <X size={24} />
                             </button>
                         </div>
 
                         <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6">
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-slate-900/50 p-4 rounded-xl border border-slate-800">
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-white/50 dark:bg-slate-900/50 p-4 rounded-xl border border-slate-200 dark:border-slate-800">
                                 <div className="md:col-span-2 relative">
                                     <label className="block text-xs font-semibold text-slate-500 uppercase mb-2 ml-1">Produto</label>
                                     <div className="relative">
@@ -535,7 +565,7 @@ const Testados = () => {
                                             type="text"
                                             ref={skuInputRef}
                                             autoFocus
-                                            className="w-full pl-10 pr-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                                            className="w-full pl-10 pr-4 py-3 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all"
                                             value={selectedProduct ? `${selectedProduct.sku} - ${selectedProduct.description}` : searchTerm}
                                             onChange={(e) => !selectedProduct && handleSearchProduct(e.target.value)}
                                             readOnly={!!selectedProduct}
@@ -549,7 +579,7 @@ const Testados = () => {
                                                     setProducts([]);
                                                     skuInputRef.current?.focus();
                                                 }}
-                                                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
+                                                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-900 dark:text-white"
                                             >
                                                 <X size={18} />
                                             </button>
@@ -557,7 +587,7 @@ const Testados = () => {
                                     </div>
 
                                     {products.length > 0 && !selectedProduct && (
-                                        <div className="absolute z-10 w-full mt-1 bg-slate-800 border border-slate-700 rounded-lg shadow-xl max-h-48 overflow-y-auto border-t-0 rounded-t-none">
+                                        <div className="absolute z-10 w-full mt-1 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg shadow-xl max-h-48 overflow-y-auto border-t-0 rounded-t-none">
                                             {products.map(p => (
                                                 <div
                                                     key={p.id}
@@ -566,10 +596,10 @@ const Testados = () => {
                                                         setProducts([]);
                                                         setTimeout(() => quantityInputRef.current?.focus(), 10);
                                                     }}
-                                                    className="p-3 hover:bg-slate-700 cursor-pointer border-b border-slate-700 last:border-0"
+                                                    className="p-3 hover:bg-slate-200 dark:bg-slate-700 cursor-pointer border-b border-slate-300 dark:border-slate-700 last:border-0"
                                                 >
                                                     <p className="font-mono text-blue-400 text-sm">{p.sku}</p>
-                                                    <p className="text-slate-300 text-xs truncate">{p.description}</p>
+                                                    <p className="text-slate-700 dark:text-slate-300 text-xs truncate">{p.description}</p>
                                                 </div>
                                             ))}
                                         </div>
@@ -583,7 +613,7 @@ const Testados = () => {
                                             type="number"
                                             ref={quantityInputRef}
                                             placeholder="0"
-                                            className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-white focus:ring-2 focus:ring-blue-500 outline-none no-spinner"
+                                            className="w-full px-4 py-3 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none no-spinner"
                                             value={quantity}
                                             onChange={(e) => setQuantity(e.target.value === '' ? '' : Number(e.target.value))}
                                         />
@@ -595,13 +625,13 @@ const Testados = () => {
                             </div>
 
                             <div className="space-y-4">
-                                <h3 className="text-sm font-semibold text-slate-400 uppercase flex items-center gap-2">
+                                <h3 className="text-sm font-semibold text-slate-500 dark:text-slate-400 uppercase flex items-center gap-2">
                                     <ClipboardList size={16} />
                                     Itens no Relatório ({reportItems.length})
                                 </h3>
-                                <div className="hidden md:block overflow-x-auto rounded-xl border border-slate-800">
+                                <div className="hidden md:block overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
                                     <table className="w-full text-left text-sm">
-                                        <thead className="bg-slate-900 text-slate-500 uppercase text-[10px] tracking-wider">
+                                        <thead className="bg-white dark:bg-slate-900 text-slate-500 uppercase text-[10px] tracking-wider">
                                             <tr>
                                                 <th className="px-6 py-3">Produto</th>
                                                 <th className="px-6 py-3 text-center">Anterior</th>
@@ -610,7 +640,7 @@ const Testados = () => {
                                                 <th className="px-6 py-3"></th>
                                             </tr>
                                         </thead>
-                                        <tbody className="divide-y divide-slate-800 bg-slate-900/30">
+                                        <tbody className="divide-y divide-slate-800 bg-white/30 dark:bg-slate-900/30">
                                             {reportItems
                                                 .filter(i =>
                                                     i.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -620,13 +650,13 @@ const Testados = () => {
                                                     const originalIndex = reportItems.findIndex(ri => ri === item);
                                                     const diff = item.currentCount - item.previousCount;
                                                     return (
-                                                        <tr key={idx} className="hover:bg-slate-800/10 transition-colors">
+                                                        <tr key={idx} className="hover:bg-slate-100/10 dark:bg-slate-800/10 transition-colors">
                                                             <td className="px-6 py-4">
                                                                 <p className="font-mono text-blue-400">{item.sku}</p>
                                                                 <p className="text-slate-500 text-xs truncate max-w-[150px] md:max-w-[300px]">{item.description}</p>
                                                             </td>
-                                                            <td className="px-6 py-4 text-center font-medium text-slate-400">{item.previousCount}</td>
-                                                            <td className="px-6 py-4 text-center font-bold text-white">{item.currentCount}</td>
+                                                            <td className="px-6 py-4 text-center font-medium text-slate-500 dark:text-slate-400">{item.previousCount}</td>
+                                                            <td className="px-6 py-4 text-center font-bold text-slate-900 dark:text-white">{item.currentCount}</td>
                                                             <td className={`px-6 py-4 text-center font-bold ${diff > 0 ? 'text-emerald-400' : diff < 0 ? 'text-red-400' : 'text-slate-500'}`}>
                                                                 {diff > 0 ? `+${diff}` : diff}
                                                             </td>
@@ -677,21 +707,21 @@ const Testados = () => {
                                             const originalIndex = reportItems.findIndex(ri => ri === item);
                                             const diff = item.currentCount - item.previousCount;
                                             return (
-                                                <div key={idx} className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex justify-between items-center shadow-sm">
+                                                <div key={idx} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 flex justify-between items-center shadow-sm">
                                                     <div className="flex-1 min-w-0 pr-4">
                                                         <p className="font-mono text-blue-400 font-bold text-sm truncate">{item.sku}</p>
                                                         <p className="text-slate-500 text-[10px] truncate">{item.description}</p>
                                                         <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-                                                            <div className="text-slate-400 bg-slate-800/50 p-2 rounded-lg text-center">
+                                                            <div className="text-slate-500 dark:text-slate-400 bg-slate-100/50 dark:bg-slate-800/50 p-2 rounded-lg text-center">
                                                                 <span className="block text-[8px] uppercase font-bold text-slate-500 mb-0.5">Anterior</span>
                                                                 <span className="font-bold">{item.previousCount}</span>
                                                             </div>
-                                                            <div className="text-white bg-slate-800/50 p-2 rounded-lg text-center">
+                                                            <div className="text-slate-900 dark:text-white bg-slate-100/50 dark:bg-slate-800/50 p-2 rounded-lg text-center">
                                                                 <span className="block text-[8px] uppercase font-bold text-slate-500 mb-0.5">Atual</span>
                                                                 <span className="font-bold">{item.currentCount}</span>
                                                             </div>
                                                         </div>
-                                                        <div className={`mt-2 text-center p-1 rounded-lg text-[10px] font-bold ${diff > 0 ? 'bg-emerald-500/10 text-emerald-400' : diff < 0 ? 'bg-red-500/10 text-red-500' : 'bg-slate-800 text-slate-500'}`}>
+                                                        <div className={`mt-2 text-center p-1 rounded-lg text-[10px] font-bold ${diff > 0 ? 'bg-emerald-500/10 text-emerald-400' : diff < 0 ? 'bg-red-500/10 text-red-500' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'}`}>
                                                             Diferença: {diff > 0 ? `+${diff}` : diff}
                                                         </div>
                                                     </div>
@@ -719,7 +749,7 @@ const Testados = () => {
                                             );
                                         })}
                                     {reportItems.length === 0 && (
-                                        <div className="py-8 text-center text-slate-500 italic text-sm border-2 border-dashed border-slate-800 rounded-xl">
+                                        <div className="py-8 text-center text-slate-500 italic text-sm border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-xl">
                                             Nenhum item adicionado
                                         </div>
                                     )}
@@ -727,8 +757,8 @@ const Testados = () => {
                             </div>
                         </div>
 
-                        <div className="p-6 border-t border-slate-800 bg-slate-900/50 flex flex-col md:flex-row justify-end gap-3 md:gap-4">
-                            <button onClick={() => { setIsModalOpen(false); setReportItems([]); setCurrentReport(null); }} className="order-2 md:order-1 px-6 py-2 text-slate-400 hover:text-white transition-colors">Cancelar</button>
+                        <div className="p-6 border-t border-slate-200 dark:border-slate-800 bg-white/50 dark:bg-slate-900/50 flex flex-col md:flex-row justify-end gap-3 md:gap-4">
+                            <button onClick={() => { setIsModalOpen(false); setReportItems([]); setTitle(''); setCurrentReport(null); }} className="order-2 md:order-1 px-6 py-2 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-white transition-colors">Cancelar</button>
                             <button onClick={saveReport} disabled={reportItems.length === 0} className="order-1 md:order-2 px-8 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold rounded-xl transition-all shadow-lg active:scale-95">Finalizar</button>
                         </div>
                     </div>
@@ -738,13 +768,13 @@ const Testados = () => {
             {/* Modal de Confirmação de Duplicidade */}
             {showConfirmModal && (
                 <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-                    <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl animate-in fade-in zoom-in duration-200">
+                    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl animate-in fade-in zoom-in duration-200">
                         <div className="p-6 text-center">
                             <div className="w-16 h-16 bg-amber-500/10 text-amber-500 rounded-full flex items-center justify-center mx-auto mb-4">
                                 <AlertTriangle size={32} />
                             </div>
-                            <h2 className="text-xl font-bold text-white mb-2">Item Já Adicionado</h2>
-                            <p className="text-slate-400 mb-6 text-sm">
+                            <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Item Já Adicionado</h2>
+                            <p className="text-slate-500 dark:text-slate-400 mb-6 text-sm">
                                 Este SKU já está na lista. Deseja atualizar a quantidade para o novo valor informado?
                             </p>
                             <div className="flex gap-3">
@@ -753,7 +783,7 @@ const Testados = () => {
                                         setShowConfirmModal(false);
                                         setDuplicateItemIndex(null);
                                     }}
-                                    className="flex-1 py-3 text-slate-400 hover:text-white font-semibold transition-colors"
+                                    className="flex-1 py-3 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-white font-semibold transition-colors"
                                 >
                                     Cancelar
                                 </button>
@@ -772,13 +802,13 @@ const Testados = () => {
             {/* Modal de Soma */}
             {summingIndex !== null && (
                 <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-                    <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl animate-in fade-in zoom-in duration-200">
+                    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl animate-in fade-in zoom-in duration-200">
                         <div className="p-6 text-center">
                             <div className="w-16 h-16 bg-emerald-500/10 text-emerald-500 rounded-full flex items-center justify-center mx-auto mb-4">
                                 <Calculator size={32} />
                             </div>
-                            <h2 className="text-xl font-bold text-white mb-2">Somar Quantidade</h2>
-                            <p className="text-slate-400 mb-6 text-sm">
+                            <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Somar Quantidade</h2>
+                            <p className="text-slate-500 dark:text-slate-400 mb-6 text-sm">
                                 Informe o valor para somar ao item <strong>{reportItems[summingIndex].sku}</strong>.
                                 <br />
                                 Atual: {reportItems[summingIndex].currentCount}
@@ -788,7 +818,7 @@ const Testados = () => {
                                 ref={sumInputRef}
                                 autoFocus
                                 placeholder="Valor a somar (ex: 10)"
-                                className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-lg text-white mb-6 focus:ring-2 focus:ring-emerald-500 outline-none no-spinner"
+                                className="w-full px-4 py-3 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white mb-6 focus:ring-2 focus:ring-emerald-500 outline-none no-spinner"
                                 value={sumValue}
                                 onChange={(e) => setSumValue(e.target.value === '' ? '' : Number(e.target.value))}
                                 onKeyDown={(e) => e.key === 'Enter' && handleSum()}
@@ -799,7 +829,7 @@ const Testados = () => {
                                         setSummingIndex(null);
                                         setSumValue('');
                                     }}
-                                    className="flex-1 py-3 text-slate-400 hover:text-white font-semibold transition-colors"
+                                    className="flex-1 py-3 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-white font-semibold transition-colors"
                                 >
                                     Cancelar
                                 </button>
@@ -819,13 +849,13 @@ const Testados = () => {
             {/* Modal de Confirmação de Exclusão de Item */}
             {showDeleteConfirm && (
                 <div className="fixed inset-0 z-[90] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-                    <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl animate-in fade-in zoom-in duration-200">
+                    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl animate-in fade-in zoom-in duration-200">
                         <div className="p-6 text-center">
                             <div className="w-16 h-16 bg-red-500/10 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4">
                                 <Trash2 size={32} />
                             </div>
-                            <h2 className="text-xl font-bold text-white mb-2">Remover Item?</h2>
-                            <p className="text-slate-400 mb-6 text-sm">
+                            <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Remover Item?</h2>
+                            <p className="text-slate-500 dark:text-slate-400 mb-6 text-sm">
                                 Tem certeza que deseja remover este item do teste? Esta ação não pode ser desfeita.
                             </p>
                             <div className="flex gap-3">
@@ -834,7 +864,7 @@ const Testados = () => {
                                         setShowDeleteConfirm(false);
                                         setItemIndexToDelete(null);
                                     }}
-                                    className="flex-1 py-3 text-slate-400 hover:text-white font-semibold transition-colors"
+                                    className="flex-1 py-3 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-white font-semibold transition-colors"
                                 >
                                     Cancelar
                                 </button>
@@ -859,13 +889,13 @@ const Testados = () => {
             {/* Modal de Confirmação de Exclusão de Relatório */}
             {showReportDeleteConfirm && (
                 <div className="fixed inset-0 z-[90] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-                    <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl animate-in fade-in zoom-in duration-200">
+                    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl animate-in fade-in zoom-in duration-200">
                         <div className="p-6 text-center">
                             <div className="w-16 h-16 bg-red-500/10 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4">
                                 <Trash2 size={32} />
                             </div>
-                            <h2 className="text-xl font-bold text-white mb-2">Excluir Relatório?</h2>
-                            <p className="text-slate-400 mb-6 text-sm">
+                            <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Excluir Relatório?</h2>
+                            <p className="text-slate-500 dark:text-slate-400 mb-6 text-sm">
                                 Tem certeza que deseja apagar este relatório de testes permanentemente?
                             </p>
                             <div className="flex gap-3">
@@ -874,7 +904,7 @@ const Testados = () => {
                                         setShowReportDeleteConfirm(false);
                                         setReportIdToDelete(null);
                                     }}
-                                    className="flex-1 py-3 text-slate-400 hover:text-white font-semibold transition-colors"
+                                    className="flex-1 py-3 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-white font-semibold transition-colors"
                                 >
                                     Cancelar
                                 </button>
