@@ -330,6 +330,7 @@ const Produtos = () => {
             <html>
                 <head>
                     <title>Etiqueta - ${product.sku}</title>
+                    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
                     <style>
                         @page { 
                             size: 150mm 100mm; 
@@ -345,11 +346,14 @@ const Produtos = () => {
                             flex-direction: column;
                             justify-content: center;
                             box-sizing: border-box;
+                            position: relative;
                         }
                         .top-section {
                             display: flex;
                             align-items: baseline;
                             width: 100%;
+                            position: relative;
+                            margin-top: 15mm;
                         }
                         .sku-container {
                             width: 55%;
@@ -383,6 +387,11 @@ const Produtos = () => {
                             color: #000;
                             margin-top: 25px;
                         }
+                        .qrcode-container {
+                            position: absolute;
+                            top: 5mm;
+                            right: 5mm;
+                        }
                         @media print {
                             * {
                                 -webkit-print-color-adjust: exact !important;
@@ -392,6 +401,7 @@ const Produtos = () => {
                     </style>
                 </head>
                 <body>
+                    <div class="qrcode-container" id="qrcode"></div>
                     <div class="top-section">
                         <div class="sku-container" id="sku-container">
                             <span class="sku" id="sku">${product.sku}</span>
@@ -402,6 +412,16 @@ const Produtos = () => {
                     </div>
                     <div class="description" id="desc">${product.description}</div>
                     <script>
+                        // Generate QR Code
+                        new QRCode(document.getElementById('qrcode'), {
+                            text: "${product.sku}",
+                            width: 90,
+                            height: 90,
+                            colorDark : "#000000",
+                            colorLight : "#ffffff",
+                            correctLevel : QRCode.CorrectLevel.M
+                        });
+
                         // Auto-scale SKU to fit 55% container exactly
                         const sku = document.getElementById('sku');
                         const skuContainer = document.getElementById('sku-container');
@@ -422,7 +442,8 @@ const Produtos = () => {
                             desc.style.fontSize = descSize + 'px';
                         }
                         
-                        setTimeout(() => window.print(), 300);
+                        // Wait slightly longer for QR code to render before printing
+                        setTimeout(() => window.print(), 500);
                     </script>
                 </body>
             </html>

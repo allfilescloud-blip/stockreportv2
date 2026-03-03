@@ -14,10 +14,11 @@ import {
     where
 } from 'firebase/firestore';
 import { db } from '../db/firebase';
-import { Search, Plus, Printer, Trash2, Edit2, X, AlertTriangle, Share2, ClipboardList, Calculator } from 'lucide-react';
+import { Search, Plus, Printer, Trash2, Edit2, X, AlertTriangle, Share2, ClipboardList, Calculator, ScanBarcode, StopCircle } from 'lucide-react';
 import { deleteDoc } from 'firebase/firestore';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { Html5Qrcode } from 'html5-qrcode';
 
 interface ReportItem {
     productId: string;
@@ -60,6 +61,8 @@ const Inventario = () => {
     const [itemIndexToDelete, setItemIndexToDelete] = useState<number | null>(null);
     const [showReportDeleteConfirm, setShowReportDeleteConfirm] = useState(false);
     const [reportIdToDelete, setReportIdToDelete] = useState<string | null>(null);
+    const [isScanning, setIsScanning] = useState(false);
+    const html5QrCodeRef = useRef<Html5Qrcode | null>(null);
 
     const skuInputRef = useRef<HTMLInputElement>(null);
     const quantityInputRef = useRef<HTMLInputElement>(null);
@@ -99,6 +102,105 @@ const Inventario = () => {
         });
         return () => unsubscribe();
     }, []);
+
+    useEffect(() => {
+        return () => {
+            if (html5QrCodeRef.current?.isScanning) {
+                html5QrCodeRef.current.stop().catch(console.error);
+            }
+        };
+    }, []);
+
+    const playSound = (type: 'success' | 'error') => {
+        const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+        const oscillator = audioContext.createOscillator();
+        const gainNode = audioContext.createGain();
+
+        oscillator.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+
+        if (type === 'success') {
+            oscillator.type = 'sine';
+            oscillator.frequency.setValueAtTime(800, audioContext.currentTime);
+            oscillator.frequency.exponentialRampToValueAtTime(1200, audioContext.currentTime + 0.1);
+            gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
+            oscillator.start();
+            oscillator.stop(audioContext.currentTime + 0.1);
+        }
+    };
+
+    const startScanner = async () => {
+        if (isScanning) return;
+        setIsScanning(true);
+
+        setTimeout(async () => {
+            try {
+                const elementId = `inventory-reader`;
+                const element = document.getElementById(elementId);
+
+                if (!element) {
+                    console.error("Elemento do scanner não encontrado no DOM");
+                    setIsScanning(false);
+                    return;
+                }
+
+                const html5QrCode = new Html5Qrcode(elementId);
+                html5QrCodeRef.current = html5QrCode;
+
+                const devices = await Html5Qrcode.getCameras();
+                if (devices && devices.length) {
+                    let cameraId = devices[0].id;
+                    const backCamera = devices.find(d =>
+                        d.label.toLowerCase().includes('back') ||
+                        d.label.toLowerCase().includes('traseira')
+                    );
+                    if (backCamera) cameraId = backCamera.id;
+
+                    await html5QrCode.start(
+                        cameraId,
+                        {
+                            fps: 10,
+                            qrbox: { width: 250, height: 150 },
+                        },
+                        async (decodedText) => {
+                            playSound('success');
+                            stopScanner();
+
+                            const found = allProducts.find(p => p.sku.toLowerCase() === decodedText.toLowerCase() || (p.ean && p.ean.toLowerCase() === decodedText.toLowerCase()));
+                            if (found) {
+                                setSelectedProduct(found);
+                                setSearchTerm('');
+                                setProducts([]);
+                                setTimeout(() => quantityInputRef.current?.focus(), 10);
+                            } else {
+                                handleSearchProduct(decodedText);
+                            }
+                        },
+                        () => { }
+                    );
+                } else {
+                    console.error("Nenhuma câmera encontrada");
+                    setIsScanning(false);
+                }
+            } catch (err) {
+                console.error("Erro ao iniciar scanner:", err);
+                setIsScanning(false);
+            }
+        }, 300);
+    };
+
+    const stopScanner = async () => {
+        if (html5QrCodeRef.current && html5QrCodeRef.current.isScanning) {
+            try {
+                await html5QrCodeRef.current.stop();
+                html5QrCodeRef.current.clear();
+            } catch (err) {
+                console.error("Erro ao parar scanner:", err);
+            }
+        }
+        setIsScanning(false);
+    };
 
     const handleSearchProduct = (term: string) => {
         setSearchTerm(term);
@@ -276,6 +378,7 @@ const Inventario = () => {
         setReportItems([]);
         setTitle('');
         setCurrentReport(null);
+        stopScanner();
     };
 
     const saveReport = async () => {
@@ -621,7 +724,7 @@ const Inventario = () => {
                                 placeholder={currentReport ? `Inventário #${reports.length - reports.findIndex(r => r.id === currentReport.id)}` : `Inventário #${reports.length + 1}`}
                                 className="flex-1 text-xl md:text-2xl font-bold text-slate-900 dark:text-white bg-transparent border-none outline-none focus:ring-0 px-2 placeholder-slate-400 dark:placeholder-slate-600 truncate"
                             />
-                            <button onClick={() => { setIsModalOpen(false); setReportItems([]); setTitle(''); setCurrentReport(null); }} className="text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-white shrink-0">
+                            <button onClick={() => { setIsModalOpen(false); setReportItems([]); setTitle(''); setCurrentReport(null); stopScanner(); }} className="text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-white shrink-0">
                                 <X size={24} />
                             </button>
                         </div>
@@ -630,32 +733,53 @@ const Inventario = () => {
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-white/50 dark:bg-slate-900/50 p-4 rounded-xl border border-slate-200 dark:border-slate-800">
                                 <div className="md:col-span-2 relative">
                                     <label className="block text-xs font-semibold text-slate-500 uppercase mb-2 ml-1">Produto (SKU ou Descrição)</label>
-                                    <div className="relative">
-                                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
-                                        <input
-                                            type="text"
-                                            ref={skuInputRef}
-                                            autoFocus
-                                            placeholder="Inserir SKU"
-                                            className="w-full pl-10 pr-4 py-3 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 outline-none"
-                                            value={selectedProduct ? `${selectedProduct.sku} - ${selectedProduct.description}` : searchTerm}
-                                            onChange={(e) => !selectedProduct && handleSearchProduct(e.target.value)}
-                                            readOnly={!!selectedProduct}
-                                        />
-                                        {(selectedProduct || searchTerm) && (
-                                            <button
-                                                onClick={() => {
-                                                    setSelectedProduct(null);
-                                                    setSearchTerm('');
-                                                    setProducts([]);
-                                                    skuInputRef.current?.focus();
-                                                }}
-                                                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-900 dark:text-white"
-                                            >
-                                                <X size={18} />
-                                            </button>
-                                        )}
+                                    <div className="relative flex items-center gap-2">
+                                        <div className="relative flex-1">
+                                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+                                            <input
+                                                type="text"
+                                                ref={skuInputRef}
+                                                autoFocus
+                                                placeholder="Inserir SKU ou Descrição"
+                                                className="w-full pl-10 pr-10 py-3 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 outline-none"
+                                                value={selectedProduct ? `${selectedProduct.sku} - ${selectedProduct.description}` : searchTerm}
+                                                onChange={(e) => !selectedProduct && handleSearchProduct(e.target.value)}
+                                                readOnly={!!selectedProduct}
+                                            />
+                                            {(selectedProduct || searchTerm) && (
+                                                <button
+                                                    onClick={() => {
+                                                        setSelectedProduct(null);
+                                                        setSearchTerm('');
+                                                        setProducts([]);
+                                                        skuInputRef.current?.focus();
+                                                    }}
+                                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-900 dark:text-white"
+                                                >
+                                                    <X size={18} />
+                                                </button>
+                                            )}
+                                        </div>
+                                        <button
+                                            onClick={isScanning ? stopScanner : startScanner}
+                                            className={`p-3 rounded-lg flex-shrink-0 transition-all text-white ${isScanning ? 'bg-red-500 hover:bg-red-600' : 'bg-slate-700 hover:bg-slate-800 dark:bg-slate-600 dark:hover:bg-slate-500'}`}
+                                            title={isScanning ? "Parar Scanner" : "Ler Código"}
+                                        >
+                                            {isScanning ? <StopCircle size={24} /> : <ScanBarcode size={24} />}
+                                        </button>
                                     </div>
+
+                                    {isScanning && (
+                                        <div className="mt-4 rounded-xl overflow-hidden border-2 border-slate-300 dark:border-slate-700 relative h-64 md:h-80 w-full bg-black">
+                                            <div id="inventory-reader" className="w-full h-full"></div>
+                                            <button
+                                                onClick={stopScanner}
+                                                className="absolute top-2 right-2 p-2 bg-red-500 text-white rounded-full hover:bg-red-600 shadow-lg z-10"
+                                            >
+                                                <X size={20} />
+                                            </button>
+                                        </div>
+                                    )}
 
                                     {products.length > 0 && !selectedProduct && (
                                         <div className="absolute z-10 w-full mt-1 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg shadow-xl max-h-48 overflow-y-auto">
