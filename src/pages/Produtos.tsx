@@ -322,6 +322,115 @@ const Produtos = () => {
         }
     };
 
+    const handlePrintLabel = (product: Product) => {
+        const printWindow = window.open('', '_blank');
+        if (!printWindow) return;
+
+        const html = `
+            <html>
+                <head>
+                    <title>Etiqueta - ${product.sku}</title>
+                    <style>
+                        @page { 
+                            size: 150mm 100mm; 
+                            margin: 0; 
+                        }
+                        body { 
+                            font-family: Arial, sans-serif; 
+                            margin: 0; 
+                            padding: 10mm;
+                            width: 150mm;
+                            height: 100mm;
+                            display: flex;
+                            flex-direction: column;
+                            justify-content: center;
+                            box-sizing: border-box;
+                        }
+                        .top-section {
+                            display: flex;
+                            align-items: baseline;
+                            width: 100%;
+                        }
+                        .sku-container {
+                            width: 55%;
+                            display: flex;
+                            align-items: baseline;
+                        }
+                        .sku {
+                            font-weight: 900;
+                            line-height: 0.75;
+                            letter-spacing: -0.03em;
+                            color: #000;
+                            white-space: nowrap;
+                            transform-origin: left bottom;
+                        }
+                        .line-container {
+                            width: 45%;
+                            padding-left: 15px;
+                            box-sizing: border-box;
+                        }
+                        .line {
+                            width: 100%;
+                            border-bottom: 5px solid black;
+                        }
+                        .description {
+                            font-weight: 900;
+                            text-align: left;
+                            line-height: 1.1;
+                            width: 100%;
+                            white-space: nowrap;
+                            overflow: hidden;
+                            color: #000;
+                            margin-top: 25px;
+                        }
+                        @media print {
+                            * {
+                                -webkit-print-color-adjust: exact !important;
+                                print-color-adjust: exact !important;
+                            }
+                        }
+                    </style>
+                </head>
+                <body>
+                    <div class="top-section">
+                        <div class="sku-container" id="sku-container">
+                            <span class="sku" id="sku">${product.sku}</span>
+                        </div>
+                        <div class="line-container">
+                            <div class="line"></div>
+                        </div>
+                    </div>
+                    <div class="description" id="desc">${product.description}</div>
+                    <script>
+                        // Auto-scale SKU to fit 55% container exactly
+                        const sku = document.getElementById('sku');
+                        const skuContainer = document.getElementById('sku-container');
+                        let skuSize = 10;
+                        sku.style.fontSize = skuSize + 'px';
+                        while(sku.offsetWidth < skuContainer.clientWidth && skuSize < 800) {
+                            skuSize += 2;
+                            sku.style.fontSize = skuSize + 'px';
+                        }
+                        sku.style.fontSize = (skuSize - 2) + 'px';
+
+                        // Auto-scale description to fit 100% width
+                        const desc = document.getElementById('desc');
+                        let descSize = 45;
+                        desc.style.fontSize = descSize + 'px';
+                        while(desc.scrollWidth > desc.clientWidth && descSize > 10) {
+                            descSize--;
+                            desc.style.fontSize = descSize + 'px';
+                        }
+                        
+                        setTimeout(() => window.print(), 300);
+                    </script>
+                </body>
+            </html>
+        `;
+        printWindow.document.write(html);
+        printWindow.document.close();
+    };
+
     return (
         <div className="p-4 md:p-8 max-w-full mx-auto">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
@@ -506,6 +615,13 @@ const Produtos = () => {
                                                 </div>
                                             )}
                                             <button
+                                                onClick={() => handlePrintLabel(product)}
+                                                className="p-2 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-white hover:bg-slate-200 dark:bg-slate-700 rounded-lg transition-all"
+                                                title="Imprimir Etiqueta Zebra"
+                                            >
+                                                <Printer size={18} />
+                                            </button>
+                                            <button
                                                 onClick={() => {
                                                     setCurrentProduct(product);
                                                     setSku(product.sku);
@@ -516,6 +632,7 @@ const Produtos = () => {
                                                     setIsModalOpen(true);
                                                 }}
                                                 className="p-2 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-white hover:bg-slate-200 dark:bg-slate-700 rounded-lg transition-all"
+                                                title="Editar"
                                             >
                                                 <Edit2 size={18} />
                                             </button>
@@ -555,6 +672,14 @@ const Produtos = () => {
                             <div className="flex items-center justify-between pt-2 border-t border-slate-200/50 dark:border-slate-800/50">
                                 <div className="flex gap-2">
                                     <button
+                                        onClick={() => handlePrintLabel(product)}
+                                        className="flex items-center justify-center gap-2 px-3 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg text-xs font-bold border border-slate-300 dark:border-slate-700 active:scale-95 transition-all text-nowrap"
+                                        title="Imprimir Etiqueta Zebra"
+                                    >
+                                        <Printer size={14} />
+                                        Etiqueta
+                                    </button>
+                                    <button
                                         onClick={() => {
                                             setCurrentProduct(product);
                                             setSku(product.sku);
@@ -564,7 +689,7 @@ const Produtos = () => {
                                             setStatus(product.status);
                                             setIsModalOpen(true);
                                         }}
-                                        className="flex items-center gap-2 px-3 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg text-xs font-bold border border-slate-300 dark:border-slate-700 active:scale-95 transition-all"
+                                        className="flex items-center justify-center gap-2 px-3 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg text-xs font-bold border border-slate-300 dark:border-slate-700 active:scale-95 transition-all text-nowrap"
                                     >
                                         <Edit2 size={14} />
                                         Editar
@@ -574,7 +699,7 @@ const Produtos = () => {
                                             setCurrentProduct(product);
                                             setIsHistoryOpen(true);
                                         }}
-                                        className="flex items-center gap-2 px-3 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg text-xs font-bold border border-slate-300 dark:border-slate-700 active:scale-95 transition-all"
+                                        className="flex items-center justify-center gap-2 px-3 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg text-xs font-bold border border-slate-300 dark:border-slate-700 active:scale-95 transition-all text-nowrap"
                                     >
                                         <History size={14} />
                                         Histórico
