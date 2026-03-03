@@ -481,7 +481,7 @@ const Inventario = () => {
                                 <th className="px-6 py-4 font-semibold text-right">Ações</th>
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-slate-800">
+                        <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
                             {reports.map((report, index) => {
                                 const sequentialId = reports.length - index;
                                 return (
@@ -549,7 +549,7 @@ const Inventario = () => {
                 </div>
 
                 {/* Mobile View (Cards) */}
-                <div className="md:hidden divide-y divide-slate-800">
+                <div className="md:hidden divide-y divide-slate-200 dark:divide-slate-800">
                     {reports.map((report, index) => {
                         const sequentialId = reports.length - index;
                         const dateText = report.createdAt?.toDate ? report.createdAt.toDate().toLocaleString('pt-BR') : 'Processando...';
@@ -716,7 +716,7 @@ const Inventario = () => {
                                                 <th className="px-6 py-3"></th>
                                             </tr>
                                         </thead>
-                                        <tbody className="divide-y divide-slate-800 bg-white/30 dark:bg-slate-900/30">
+                                        <tbody className="divide-y divide-slate-200 dark:divide-slate-800 bg-white/30 dark:bg-slate-900/30">
                                             {reportItems
                                                 .filter(i =>
                                                     i.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||

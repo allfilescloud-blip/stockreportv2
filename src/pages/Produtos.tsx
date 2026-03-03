@@ -486,7 +486,7 @@ const Produtos = () => {
                                 <th className="px-6 py-4 font-semibold text-right">Ações</th>
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-slate-800">
+                        <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
                             {filteredProducts.map(product => (
                                 <tr key={product.id} className="hover:bg-slate-100/30 dark:bg-slate-800/30 transition-colors">
                                     <td className="px-6 py-4 font-mono text-blue-400 text-nowrap text-sm">{product.sku}</td>
@@ -537,7 +537,7 @@ const Produtos = () => {
                 </div>
 
                 {/* Layout Mobile (Cards) */}
-                <div className="md:hidden divide-y divide-slate-800">
+                <div className="md:hidden divide-y divide-slate-200 dark:divide-slate-800">
                     {filteredProducts.map(product => (
                         <div key={product.id} className="p-4 space-y-4 hover:bg-slate-100/20 dark:bg-slate-800/20 transition-colors">
                             <div className="flex justify-between items-start">
