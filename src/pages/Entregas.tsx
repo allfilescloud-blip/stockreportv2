@@ -334,7 +334,7 @@ const Entregas = () => {
                             </tr>
                         </thead>
                         <tbody>
-                            ${report.items.map(item => `
+                            ${[...report.items].sort((a, b) => a.sku.localeCompare(b.sku, undefined, { numeric: true, sensitivity: 'base' })).map(item => `
                                 <tr>
                                     <td><strong>${item.sku}</strong></td>
                                     <td>${item.description}</td>

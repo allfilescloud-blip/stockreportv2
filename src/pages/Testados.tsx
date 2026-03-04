@@ -339,17 +339,17 @@ const Testados = () => {
                             </tr>
                         </thead>
                         <tbody>
-                            ${report.items.map(item => {
+                            ${[...report.items].sort((a, b) => a.sku.localeCompare(b.sku, undefined, { numeric: true, sensitivity: 'base' })).map(item => {
             const diff = item.currentCount - item.previousCount;
             return `
-                                    <tr>
+            < tr >
                                         <td><strong>${item.sku}</strong></td>
                                         <td>${item.description}</td>
                                         <td>${item.previousCount}</td>
                                         <td>${item.currentCount}</td>
                                         <td class="${diff > 0 ? 'diff-pos' : diff < 0 ? 'diff-neg' : ''}">${diff > 0 ? '+' : ''}${diff}</td>
-                                    </tr>
-                                `;
+                                    </tr >
+    `;
         }).join('')}
                         </tbody>
                     </table>
