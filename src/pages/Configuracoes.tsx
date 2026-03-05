@@ -59,6 +59,7 @@ const Configuracoes = () => {
         { id: 'Locais', title: 'Locais de Estoque', icon: MapPin, description: 'Gerencie depósitos e prateleiras' },
         { id: 'Database', title: 'Banco de Dados', icon: DatabaseIcon, description: 'Exportar dados, limpar cache e backups', adminOnly: true },
         { id: 'Acessos', title: 'Segurança e Acessos', icon: Shield, description: 'Gerenciar permissões e novos cadastros', adminOnly: true },
+        { id: 'Sobre', title: 'Sobre o Sistema', icon: Info, description: 'Versão 1.1.0 - StockReport Intelligence' },
     ];
 
     return (
@@ -205,6 +206,23 @@ const Configuracoes = () => {
 
                     {activeTab === 'Database' && isAdmin && (
                         <DatabaseTools />
+                    )}
+
+                    {activeTab === 'Sobre' && (
+                        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-12 text-center animate-in fade-in slide-in-from-right-4 duration-300">
+                            <Info size={48} className="text-blue-500 mx-auto mb-4 opacity-20" />
+                            <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">StockReport Intelligence</h2>
+                            <p className="text-slate-500 dark:text-slate-400 mb-6 font-medium">Versão 1.1.0 (PRO)</p>
+                            <div className="max-w-md mx-auto space-y-4">
+                                <div className="p-4 bg-slate-100/50 dark:bg-slate-800/50 rounded-2xl border border-slate-200 dark:border-slate-800 text-left text-sm text-slate-500 dark:text-slate-400">
+                                    Sistema avançado de gestão de estoque e auditoria desenvolvido com React e Firebase.
+                                </div>
+                                <div className="space-y-1">
+                                    <p className="text-xs text-slate-500 italic">© 2026 Todos os direitos reservados.</p>
+                                    <p className="text-xs text-slate-500 italic">Idealizado e desenvolvido por Fabio Xavier</p>
+                                </div>
+                            </div>
+                        </div>
                     )}
                 </div>
             </div>
