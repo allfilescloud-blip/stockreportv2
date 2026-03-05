@@ -56,7 +56,7 @@ const Configuracoes = () => {
     const sections = [
         { id: 'Geral', title: 'Conta', icon: User, description: 'Gerencie suas informações de perfil e senha' },
         { id: 'Notificações', title: 'Notificações', icon: Bell, description: 'Configure alertas de estoque baixo e novos relatórios' },
-        { id: 'Locais', title: 'Locais de Estoque', icon: MapPin, description: 'Gerencie depósitos e prateleiras', adminOnly: true },
+        { id: 'Locais', title: 'Locais de Estoque', icon: MapPin, description: 'Gerencie depósitos e prateleiras' },
         { id: 'Database', title: 'Banco de Dados', icon: DatabaseIcon, description: 'Exportar dados, limpar cache e backups', adminOnly: true },
         { id: 'Acessos', title: 'Segurança e Acessos', icon: Shield, description: 'Gerenciar permissões e novos cadastros', adminOnly: true },
     ];
@@ -195,7 +195,7 @@ const Configuracoes = () => {
                         </div>
                     )}
 
-                    {activeTab === 'Locais' && isAdmin && (
+                    {activeTab === 'Locais' && (
                         <LocationSettings />
                     )}
 
