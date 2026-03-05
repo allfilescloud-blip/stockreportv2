@@ -214,11 +214,13 @@ const Configuracoes = () => {
                             <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">StockReport Intelligence</h2>
                             <p className="text-slate-500 dark:text-slate-400 mb-6 font-medium">Versão 1.1.0 (PRO)</p>
                             <div className="max-w-md mx-auto space-y-4">
-                                <div className="p-4 bg-slate-100/50 dark:bg-slate-800/50 rounded-2xl border border-slate-200 dark:border-slate-800 text-left text-sm text-slate-500 dark:text-slate-400 space-y-2">
-                                    <p>Sistema avançado de gestão de estoque e auditoria desenvolvido com React e Firebase.</p>
-                                    <p className="font-semibold text-slate-700 dark:text-slate-300">Idealizado e desenvolvido por Fabio Xavier</p>
+                                <div className="p-4 bg-slate-100/50 dark:bg-slate-800/50 rounded-2xl border border-slate-200 dark:border-slate-800 text-left text-sm text-slate-500 dark:text-slate-400">
+                                    Sistema avançado de gestão de estoque e auditoria desenvolvido com React e Firebase.
                                 </div>
-                                <p className="text-xs text-slate-500 italic">© 2026 Todos os direitos reservados.</p>
+                                <div className="space-y-1">
+                                    <p className="text-xs text-slate-500 italic">© 2026 Todos os direitos reservados.</p>
+                                    <p className="text-xs text-slate-500 italic">Idealizado e desenvolvido por Fabio Xavier</p>
+                                </div>
                             </div>
                         </div>
                     )}
