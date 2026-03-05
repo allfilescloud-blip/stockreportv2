@@ -1,0 +1,2 @@
+﻿src/pages/Produtos.tsx(14,79): error TS6133: 'StopCircle' is declared but its value is never read.
+src/pages/Produtos.tsx(17,1): error TS6133: 'useRef' is declared but its value is never read.

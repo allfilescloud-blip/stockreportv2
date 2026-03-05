@@ -15,21 +15,23 @@ import {
     PinOff
 } from 'lucide-react';
 import { auth } from '../db/firebase';
+import { useAuth } from '../hooks/useAuth';
 
 const Sidebar = () => {
     const location = useLocation();
     const [isOpen, setIsOpen] = useState(false);
     const [isPinned, setIsPinned] = useState(false);
     const [isHovered, setIsHovered] = useState(false);
+    const { isAdmin, permissions } = useAuth();
 
     const isExpanded = isPinned || isHovered;
 
     const menuItems = [
         { name: 'Dashboard', path: '/', icon: LayoutDashboard },
         { name: 'Produtos', path: '/produtos', icon: Package },
-        { name: 'Inventário', path: '/inventario', icon: ClipboardList },
-        { name: 'Testados', path: '/testados', icon: CheckCircle },
-        { name: 'Entregas', path: '/entregas', icon: Truck },
+        ...(isAdmin || permissions?.inventory ? [{ name: 'Inventário', path: '/inventario', icon: ClipboardList }] : []),
+        ...(isAdmin || permissions?.tested ? [{ name: 'Testados', path: '/testados', icon: CheckCircle }] : []),
+        ...(isAdmin || permissions?.delivery ? [{ name: 'Entregas', path: '/entregas', icon: Truck }] : []),
         { name: 'Configurações', path: '/configuracoes', icon: Settings },
     ];
 

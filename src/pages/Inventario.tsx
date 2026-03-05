@@ -4,21 +4,20 @@ import {
     addDoc,
     onSnapshot,
     query,
-    orderBy,
-    limit,
     updateDoc,
     doc,
     arrayUnion,
     serverTimestamp,
-    getDocs,
-    where
+    deleteDoc,
 } from 'firebase/firestore';
 import { db } from '../db/firebase';
-import { Search, Plus, Printer, Trash2, Edit2, X, AlertTriangle, Share2, ClipboardList, Calculator, ScanBarcode, StopCircle } from 'lucide-react';
-import { deleteDoc } from 'firebase/firestore';
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
-import { Html5Qrcode } from 'html5-qrcode';
+import { Search, Plus, Printer, Trash2, Edit2, X, AlertTriangle, Share2, ClipboardList, Calculator, ScanBarcode, StopCircle, Layers, MapPin } from 'lucide-react';
+import { shareReport, printWebReport } from '../utils/reportUtils';
+import { ScannerModal } from '../components/ScannerModal';
+import toast from 'react-hot-toast';
+import { useProducts } from '../contexts/ProductsContext';
+import { useReports } from '../hooks/useReports';
+import { ReportSkeleton } from '../components/ReportSkeleton';
 
 interface ReportItem {
     productId: string;
@@ -27,6 +26,12 @@ interface ReportItem {
     currentCount: number;
     previousCount: number;
 }
+
+interface Location {
+    id: string;
+    name: string;
+}
+
 
 interface Report {
     id: string;
@@ -37,13 +42,17 @@ interface Report {
     items: ReportItem[];
     userName?: string;
     title?: string;
+    locationId?: string;
+    locationName?: string;
 }
 
 const Inventario = () => {
-    const [reports, setReports] = useState<Report[]>([]);
+    const [selectedReports, setSelectedReports] = useState<string[]>([]);
+    const [locations, setLocations] = useState<Location[]>([]);
+    const [selectedLocationId, setSelectedLocationId] = useState('');
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
-    const [allProducts, setAllProducts] = useState<any[]>([]);
+    const { products: allProducts } = useProducts();
     const [products, setProducts] = useState<any[]>([]);
     const [reportItems, setReportItems] = useState<ReportItem[]>([]);
     const [selectedProduct, setSelectedProduct] = useState<any>(null);
@@ -55,6 +64,7 @@ const Inventario = () => {
     const [showMissingModal, setShowMissingModal] = useState(false);
     const [duplicateItemIndex, setDuplicateItemIndex] = useState<number | null>(null);
     const [filterDate, setFilterDate] = useState('');
+    const [filterLocation, setFilterLocation] = useState('');
     const [summingIndex, setSummingIndex] = useState<number | null>(null);
     const [sumValue, setSumValue] = useState<number | string>('');
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -62,144 +72,38 @@ const Inventario = () => {
     const [showReportDeleteConfirm, setShowReportDeleteConfirm] = useState(false);
     const [reportIdToDelete, setReportIdToDelete] = useState<string | null>(null);
     const [isScanning, setIsScanning] = useState(false);
-    const html5QrCodeRef = useRef<Html5Qrcode | null>(null);
+
+    const { reports, loading } = useReports<Report>('inventory', filterDate, filterLocation);
 
     const skuInputRef = useRef<HTMLInputElement>(null);
     const quantityInputRef = useRef<HTMLInputElement>(null);
     const sumInputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
-        // Removemos o 'where' temporariamente para evitar o erro de índice composto
-        // No futuro, após criar o índice, podemos voltar a filtrar no servidor por performance
-        const q = query(
-            collection(db, 'reports'),
-            orderBy('createdAt', 'asc')
-        );
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-            const allReps = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Report));
-            // Filtramos no cliente por tipo e data
-            const inventoryReps = allReps.filter(r => {
-                const isInventory = r.type === 'inventory';
-                if (!isInventory) return false;
-
-                if (filterDate) {
-                    const reportDate = r.createdAt?.toDate ? r.createdAt.toDate().toLocaleDateString('en-CA') : '';
-                    return reportDate === filterDate;
-                }
-
-                return true;
-            });
-            setReports(inventoryReps.reverse());
+        const qLocs = query(collection(db, 'locations'));
+        const unsubscribeLocs = onSnapshot(qLocs, (snapshot: any) => {
+            const locs = snapshot.docs.map((doc: any) => ({ id: doc.id, ...doc.data() })) as Location[];
+            locs.sort((a, b) => a.name.localeCompare(b.name));
+            setLocations(locs);
         });
-        return () => unsubscribe();
-    }, [filterDate]);
 
-    useEffect(() => {
-        const q = query(collection(db, 'products'), where('status', '==', 'active'));
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-            const prods = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            setAllProducts(prods);
-        });
-        return () => unsubscribe();
-    }, []);
-
-    useEffect(() => {
         return () => {
-            if (html5QrCodeRef.current?.isScanning) {
-                html5QrCodeRef.current.stop().catch(console.error);
-            }
+            unsubscribeLocs();
         };
     }, []);
 
-    const playSound = (type: 'success' | 'error') => {
-        const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-        const oscillator = audioContext.createOscillator();
-        const gainNode = audioContext.createGain();
+    const startScanner = () => setIsScanning(true);
 
-        oscillator.connect(gainNode);
-        gainNode.connect(audioContext.destination);
-
-        if (type === 'success') {
-            oscillator.type = 'sine';
-            oscillator.frequency.setValueAtTime(800, audioContext.currentTime);
-            oscillator.frequency.exponentialRampToValueAtTime(1200, audioContext.currentTime + 0.1);
-            gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
-            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
-            oscillator.start();
-            oscillator.stop(audioContext.currentTime + 0.1);
+    const handleScan = (decodedText: string) => {
+        const found = allProducts.find(p => p.sku.toLowerCase() === decodedText.toLowerCase() || (p.ean && p.ean.toLowerCase() === decodedText.toLowerCase()));
+        if (found) {
+            setSelectedProduct(found);
+            setSearchTerm('');
+            setProducts([]);
+            setTimeout(() => quantityInputRef.current?.focus(), 10);
+        } else {
+            handleSearchProduct(decodedText);
         }
-    };
-
-    const startScanner = async () => {
-        if (isScanning) return;
-        setIsScanning(true);
-
-        setTimeout(async () => {
-            try {
-                const elementId = `inventory-reader`;
-                const element = document.getElementById(elementId);
-
-                if (!element) {
-                    console.error("Elemento do scanner não encontrado no DOM");
-                    setIsScanning(false);
-                    return;
-                }
-
-                const html5QrCode = new Html5Qrcode(elementId);
-                html5QrCodeRef.current = html5QrCode;
-
-                const devices = await Html5Qrcode.getCameras();
-                if (devices && devices.length) {
-                    let cameraId = devices[0].id;
-                    const backCamera = devices.find(d =>
-                        d.label.toLowerCase().includes('back') ||
-                        d.label.toLowerCase().includes('traseira')
-                    );
-                    if (backCamera) cameraId = backCamera.id;
-
-                    await html5QrCode.start(
-                        cameraId,
-                        {
-                            fps: 10,
-                            qrbox: { width: 250, height: 150 },
-                        },
-                        async (decodedText) => {
-                            playSound('success');
-                            stopScanner();
-
-                            const found = allProducts.find(p => p.sku.toLowerCase() === decodedText.toLowerCase() || (p.ean && p.ean.toLowerCase() === decodedText.toLowerCase()));
-                            if (found) {
-                                setSelectedProduct(found);
-                                setSearchTerm('');
-                                setProducts([]);
-                                setTimeout(() => quantityInputRef.current?.focus(), 10);
-                            } else {
-                                handleSearchProduct(decodedText);
-                            }
-                        },
-                        () => { }
-                    );
-                } else {
-                    console.error("Nenhuma câmera encontrada");
-                    setIsScanning(false);
-                }
-            } catch (err) {
-                console.error("Erro ao iniciar scanner:", err);
-                setIsScanning(false);
-            }
-        }, 300);
-    };
-
-    const stopScanner = async () => {
-        if (html5QrCodeRef.current && html5QrCodeRef.current.isScanning) {
-            try {
-                await html5QrCodeRef.current.stop();
-                html5QrCodeRef.current.clear();
-            } catch (err) {
-                console.error("Erro ao parar scanner:", err);
-            }
-        }
-        setIsScanning(false);
     };
 
     const handleSearchProduct = (term: string) => {
@@ -227,19 +131,30 @@ const Inventario = () => {
             return;
         }
 
-        // Buscar contagem anterior
-        let previousCount = 0;
-        const lastReportQuery = query(
-            collection(db, 'reports'),
-            where('type', '==', 'inventory'),
-            orderBy('createdAt', 'desc'),
-            limit(1)
-        );
-        const lastReportSnap = await getDocs(lastReportQuery);
+        if (!selectedLocationId) {
+            toast.error('Por favor, selecione um Local de Estoque antes de adicionar itens.');
+            return;
+        }
 
-        if (!lastReportSnap.empty) {
-            const lastReport = lastReportSnap.docs[0].data() as Report;
-            const prevItem = lastReport.items.find(i => i.productId === selectedProduct.id);
+        // Buscar contagem anterior usando o array local de reports
+        let previousCount = 0;
+        let previousReport = null;
+
+        if (currentReport) {
+            // Editando: procurar o primeiro relatório do mesmo local que seja mais antigo que o atual
+            const currentReportCreatedAt = currentReport.createdAt?.toDate ? currentReport.createdAt.toDate().getTime() : Date.now();
+            previousReport = reports.find(r =>
+                r.locationId === selectedLocationId &&
+                r.id !== currentReport.id &&
+                (r.createdAt?.toDate ? r.createdAt.toDate().getTime() : 0) < currentReportCreatedAt
+            );
+        } else {
+            // Novo: o mais recente (primeiro do array) com o mesmo local
+            previousReport = reports.find(r => r.locationId === selectedLocationId);
+        }
+
+        if (previousReport) {
+            const prevItem = previousReport.items.find((i: any) => i.productId === selectedProduct.id);
             previousCount = prevItem ? prevItem.currentCount : 0;
         }
 
@@ -291,21 +206,13 @@ const Inventario = () => {
             return;
         }
 
-        // Buscar o último inventário
-        const lastReportQuery = query(
-            collection(db, 'reports'),
-            where('type', '==', 'inventory'),
-            orderBy('createdAt', 'desc'),
-            limit(1)
-        );
-        const lastReportSnap = await getDocs(lastReportQuery);
+        // Buscar o último inventário do array local
+        const lastReport = reports.find(r => r.locationId === selectedLocationId);
 
-        if (lastReportSnap.empty) {
+        if (!lastReport) {
             await executeFinalSave(reportItems);
             return;
         }
-
-        const lastReport = lastReportSnap.docs[0].data() as Report;
 
         // Identificar SKUs que tinham >0 no anterior e não estão no atual
         const currentSkus = new Set(reportItems.map(i => i.sku));
@@ -339,12 +246,16 @@ const Inventario = () => {
         if (itemsToSave.length === 0) return;
 
         let reportRef;
+        const locationObj = locations.find(l => l.id === selectedLocationId);
+
         if (currentReport) {
             reportRef = doc(db, 'reports', currentReport.id);
             await updateDoc(reportRef, {
                 title: title.trim(),
                 items: itemsToSave,
                 totalItems: itemsToSave.length,
+                locationId: selectedLocationId,
+                locationName: locationObj?.name || '',
                 updatedAt: serverTimestamp()
             });
         } else {
@@ -353,6 +264,8 @@ const Inventario = () => {
                 title: title.trim(),
                 items: itemsToSave,
                 totalItems: itemsToSave.length,
+                locationId: selectedLocationId,
+                locationName: locationObj?.name || '',
                 createdAt: serverTimestamp(),
                 updatedAt: serverTimestamp()
             });
@@ -377,8 +290,10 @@ const Inventario = () => {
         setIsModalOpen(false);
         setReportItems([]);
         setTitle('');
+        setSelectedLocationId('');
         setCurrentReport(null);
-        stopScanner();
+        setIsScanning(false);
+        toast.success("Inventário salvo com sucesso!");
     };
 
     const saveReport = async () => {
@@ -396,144 +311,58 @@ const Inventario = () => {
             await deleteDoc(doc(db, 'reports', reportIdToDelete));
             setShowReportDeleteConfirm(false);
             setReportIdToDelete(null);
+            toast.success("Inventário excluído!");
         } catch (error) {
+            toast.error('Erro ao excluir');
             console.error('Erro ao excluir:', error);
         }
     };
 
-    const handleShare = async (report: Report) => {
-        const sequentialId = reports.length - reports.findIndex(r => r.id === report.id);
-        const dateText = report.createdAt?.toDate ? report.createdAt.toDate().toLocaleString('pt-BR') : 'Processando...';
-        const reportTitle = report.title || `Inventário #${sequentialId}`;
+    const handleToggleSelectReport = (reportId: string) => {
+        setSelectedReports(prev => {
+            if (prev.includes(reportId)) return prev.filter(id => id !== reportId);
+            if (prev.length >= 5) {
+                toast.error('Você pode selecionar no máximo 5 relatórios para unificar.');
+                return prev;
+            }
+            return [...prev, reportId];
+        });
+    };
 
-        // Criar PDF
-        const doc = new jsPDF();
+    const handleMergeReports = () => {
+        if (selectedReports.length < 2) return;
 
-        // Cabeçalho do PDF
-        doc.setFontSize(20);
-        doc.text(reportTitle, 15, 20);
-        doc.setFontSize(10);
-        doc.text(`Data: ${dateText}`, 15, 30);
-        doc.text(`Total de Itens: ${report.totalItems}`, 150, 30);
-        doc.line(15, 35, 195, 35);
+        const reportsToMerge = reports.filter(r => selectedReports.includes(r.id));
+        const mergedItemsMap = new Map<string, ReportItem>();
 
-        // Tabela de itens
-        const tableData = [...report.items]
-            .sort((a, b) => a.sku.localeCompare(b.sku, undefined, { numeric: true, sensitivity: 'base' }))
-            .map(item => {
-                const diff = item.currentCount - item.previousCount;
-                return [
-                    item.sku,
-                    item.description,
-                    item.previousCount.toString(),
-                    item.currentCount.toString(),
-                    diff > 0 ? `+${diff}` : diff.toString()
-                ];
+        reportsToMerge.forEach(report => {
+            report.items.forEach(item => {
+                const existing = mergedItemsMap.get(item.sku);
+                if (existing) {
+                    existing.currentCount += item.currentCount;
+                } else {
+                    mergedItemsMap.set(item.sku, { ...item, previousCount: 0 });
+                }
             });
-
-        autoTable(doc, {
-            startY: 40,
-            head: [['SKU', 'Descrição', 'Anterior', 'Atual', 'Diferença']],
-            body: tableData,
-            headStyles: { fillColor: [226, 232, 240], textColor: [51, 65, 85] },
-            alternateRowStyles: { fillColor: [241, 245, 249] },
         });
 
-        const pdfBlob = doc.output('blob');
-        const pdfFile = new File([pdfBlob], `inventario_${sequentialId}.pdf`, { type: 'application/pdf' });
+        const mergedItems = Array.from(mergedItemsMap.values());
 
-        const shareText = `📊 *${reportTitle}*\n📅 *Data:* ${dateText}\n📝 *Itens:* ${report.totalItems}`;
+        setReportItems(mergedItems);
+        setTitle(`Inventários Unificados (${selectedReports.length})`);
+        setSelectedLocationId('');
+        setCurrentReport(null);
+        setIsModalOpen(true);
+        setSelectedReports([]);
+    };
 
-        if (navigator.share && navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
-            try {
-                await navigator.share({
-                    files: [pdfFile],
-                    title: reportTitle,
-                    text: shareText
-                });
-            } catch (error) {
-                if ((error as any).name !== 'AbortError') {
-                    console.error('Erro ao compartilhar:', error);
-                }
-            }
-        } else if (navigator.share) {
-            try {
-                await navigator.share({
-                    title: reportTitle,
-                    text: shareText
-                });
-            } catch (error) {
-                console.error('Erro ao compartilhar texto:', error);
-            }
-        } else {
-            navigator.clipboard.writeText(shareText);
-            alert('Informações copiadas para a área de transferência!');
-        }
+    const handleShare = async (report: Report) => {
+        const sequentialId = reports.length - reports.findIndex(r => r.id === report.id);
+        await shareReport(report, sequentialId);
     };
 
     const handlePrintReport = (report: Report, sequentialId: number) => {
-        const printWindow = window.open('', '_blank');
-        if (!printWindow) return;
-
-        const reportTitle = report.title || `Inventário #${sequentialId}`;
-
-        const html = `
-            <html>
-                <head>
-                    <title>${reportTitle}</title>
-                    <style>
-                        body { font-family: sans-serif; padding: 20px; color: #333; }
-                        table { width: 100%; border-collapse: collapse; margin-top: 20px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-                        th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
-                        th { background-color: #e2e8f0 !important; }
-                        tbody tr:nth-child(even) { background-color: #f2f2f2 !important; }
-                        .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #333; padding-bottom: 10px; }
-                        .diff-pos { color: green; font-weight: bold; }
-                        .diff-neg { color: red; font-weight: bold; }
-                    </style>
-                </head>
-                <body>
-                    <div class="header">
-                        <div>
-                            <h1>${reportTitle}</h1>
-                            <p>Data: ${report.createdAt?.toDate ? report.createdAt.toDate().toLocaleString('pt-BR') : new Date().toLocaleString('pt-BR')}</p>
-                        </div>
-                        <div style="text-align: right">
-                            <p>Total de Itens: ${report.totalItems}</p>
-                        </div>
-                    </div>
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>SKU</th>
-                                <th>Descrição</th>
-                                <th>Anterior</th>
-                                <th>Atual</th>
-                                <th>Diferença</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${[...report.items].sort((a, b) => a.sku.localeCompare(b.sku, undefined, { numeric: true, sensitivity: 'base' })).map(item => {
-            const diff = item.currentCount - item.previousCount;
-            return `
-                                    <tr>
-                                        <td><strong>${item.sku}</strong></td>
-                                        <td>${item.description}</td>
-                                        <td>${item.previousCount}</td>
-                                        <td>${item.currentCount}</td>
-                                        <td class="${diff > 0 ? 'diff-pos' : diff < 0 ? 'diff-neg' : ''}">${diff > 0 ? '+' : ''}${diff}</td>
-                                    </tr>
-                                `;
-        }).join('')}
-                        </tbody>
-                    </table>
-                    <script>window.print();</script>
-                </body>
-            </html>
-        `;
-
-        printWindow.document.write(html);
-        printWindow.document.close();
+        printWebReport(report, sequentialId);
     };
 
     return (
@@ -555,13 +384,37 @@ const Inventario = () => {
                         onChange={(e) => setFilterDate(e.target.value)}
                     />
                 </div>
+                <div className="flex-1 w-full">
+                    <label className="block text-xs font-semibold text-slate-500 uppercase mb-2 ml-1">Filtrar por Local</label>
+                    <select
+                        value={filterLocation}
+                        onChange={(e) => setFilterLocation(e.target.value)}
+                        className="w-full bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-4 py-2 text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
+                    >
+                        <option value="">Todos os Locais</option>
+                        {locations.map((loc) => (
+                            <option key={loc.id} value={loc.id}>
+                                {loc.name}
+                            </option>
+                        ))}
+                    </select>
+                </div>
                 <button
-                    onClick={() => setFilterDate('')}
+                    onClick={() => { setFilterDate(''); setFilterLocation(''); }}
                     className="px-6 py-2 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-white transition-colors text-sm font-medium h-[42px]"
                 >
                     Limpar
                 </button>
                 <div className="hidden md:block h-10 w-px bg-slate-100 dark:bg-slate-800 mx-2"></div>
+                {selectedReports.length > 1 && (
+                    <button
+                        onClick={handleMergeReports}
+                        className="w-full md:w-auto flex items-center justify-center space-x-2 bg-indigo-600 hover:bg-indigo-700 text-white px-8 py-2.5 rounded-xl transition-all shadow-lg shadow-indigo-900/20 font-bold"
+                    >
+                        <Layers size={20} />
+                        <span>Unificar ({selectedReports.length})</span>
+                    </button>
+                )}
                 <button
                     onClick={() => setIsModalOpen(true)}
                     className="w-full md:w-auto flex items-center justify-center space-x-2 bg-emerald-600 hover:bg-emerald-700 text-white px-8 py-2.5 rounded-xl transition-all shadow-lg shadow-emerald-900/20 font-bold"
@@ -572,159 +425,217 @@ const Inventario = () => {
             </div>
 
             <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-xl">
-                <div className="hidden md:block overflow-x-auto">
-                    <table className="w-full text-left">
-                        <thead>
-                            <tr className="bg-slate-200/50 dark:bg-slate-700/50 text-slate-500 dark:text-slate-400 text-sm">
-                                <th className="px-6 py-4 font-semibold">ID</th>
-                                <th className="px-6 py-4 font-semibold">Título</th>
-                                <th className="px-6 py-4 font-semibold">Criação</th>
-                                <th className="px-6 py-4 font-semibold">Alteração</th>
-                                <th className="px-6 py-4 font-semibold text-center">Itens</th>
-                                <th className="px-6 py-4 font-semibold text-right">Ações</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+                {loading ? (
+                    <div className="p-4 md:p-6">
+                        <ReportSkeleton />
+                    </div>
+                ) : (
+                    <>
+                        <div className="hidden md:block overflow-x-auto">
+                            <table className="w-full text-left">
+                                <thead>
+                                    <tr className="bg-slate-200/50 dark:bg-slate-700/50 text-slate-500 dark:text-slate-400 text-sm">
+                                        <th className="px-6 py-4 font-semibold w-12">
+                                            <div className="w-4 h-4" /> {/* Spacer for alignment */}
+                                        </th>
+                                        <th className="px-6 py-4 font-semibold">ID</th>
+                                        <th className="px-6 py-4 font-semibold">Título</th>
+                                        <th className="px-6 py-4 font-semibold">Criação</th>
+                                        <th className="px-6 py-4 font-semibold">Alteração</th>
+                                        <th className="px-6 py-4 font-semibold text-center">Itens</th>
+                                        <th className="px-6 py-4 font-semibold text-right">Ações</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+                                    {reports.map((report, index) => {
+                                        const sequentialId = reports.length - index;
+                                        const isSelected = selectedReports.includes(report.id);
+                                        return (
+                                            <tr key={report.id} className={`transition-colors ${isSelected ? 'bg-indigo-50/50 dark:bg-indigo-900/20' : 'hover:bg-slate-100/30 dark:bg-slate-800/30'}`}>
+                                                <td className="px-6 py-4">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={isSelected}
+                                                        onChange={() => handleToggleSelectReport(report.id)}
+                                                        className="w-4 h-4 text-emerald-600 rounded border-slate-300 dark:border-slate-700 focus:ring-emerald-500 dark:bg-slate-800 cursor-pointer"
+                                                    />
+                                                </td>
+                                                <td className="px-6 py-4 font-mono text-emerald-400">#{sequentialId}</td>
+                                                <td className="px-6 py-4">
+                                                    <div className="font-bold text-slate-900 dark:text-white">
+                                                        {report.title || <span className="text-slate-400 font-normal">Inventário #{sequentialId}</span>}
+                                                    </div>
+                                                    {report.locationName && (
+                                                        <div className="text-xs text-slate-500 mt-1 flex items-center gap-1">
+                                                            <MapPin size={12} className="text-emerald-500" />
+                                                            {report.locationName}
+                                                        </div>
+                                                    )}
+                                                </td>
+                                                <td className="px-6 py-4 text-slate-700 dark:text-slate-300 text-sm">
+                                                    {report.createdAt?.toDate ? (
+                                                        <div className="flex flex-col">
+                                                            <span>{report.createdAt.toDate().toLocaleDateString('pt-BR')}</span>
+                                                            <span className="text-xs text-slate-500 font-normal mt-0.5">{report.createdAt.toDate().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
+                                                        </div>
+                                                    ) : 'Processando...'}
+                                                </td>
+                                                <td className="px-6 py-4 text-slate-500 dark:text-slate-400 text-sm">
+                                                    {report.updatedAt?.toDate ? (
+                                                        <div className="flex flex-col">
+                                                            <span>{report.updatedAt.toDate().toLocaleDateString('pt-BR')}</span>
+                                                            <span className="text-xs font-normal mt-0.5">{report.updatedAt.toDate().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
+                                                        </div>
+                                                    ) : '-'}
+                                                </td>
+                                                <td className="px-6 py-4 text-center">
+                                                    <span className="bg-emerald-500/10 text-emerald-400 px-3 py-1 rounded-full text-xs font-bold">
+                                                        {report.totalItems} itens
+                                                    </span>
+                                                </td>
+                                                <td className="px-6 py-4 text-right">
+                                                    <div className="flex justify-end gap-2 text-nowrap">
+                                                        <button
+                                                            onClick={() => {
+                                                                setCurrentReport(report);
+                                                                setReportItems(report.items);
+                                                                setTitle(report.title || '');
+                                                                setSelectedLocationId(report.locationId || '');
+                                                                setIsModalOpen(true);
+                                                            }}
+                                                            className="p-2 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-white hover:bg-slate-200 dark:bg-slate-700 rounded-lg transition-all"
+                                                            title="Editar"
+                                                        >
+                                                            <Edit2 size={18} />
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handlePrintReport(report, sequentialId)}
+                                                            className="p-2 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-white hover:bg-slate-200 dark:bg-slate-700 rounded-lg transition-all"
+                                                            title="Imprimir"
+                                                        >
+                                                            <Printer size={18} />
+                                                        </button>
+                                                        <button
+                                                            onClick={() => deleteReport(report.id)}
+                                                            className="p-2 text-slate-500 dark:text-slate-400 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-all"
+                                                            title="Excluir"
+                                                        >
+                                                            <Trash2 size={18} />
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        {/* Mobile View (Cards) */}
+                        <div className="md:hidden divide-y divide-slate-200 dark:divide-slate-800">
                             {reports.map((report, index) => {
                                 const sequentialId = reports.length - index;
+                                const dateText = report.createdAt?.toDate ? report.createdAt.toDate().toLocaleString('pt-BR') : 'Processando...';
+                                const isSelected = selectedReports.includes(report.id);
                                 return (
-                                    <tr key={report.id} className="hover:bg-slate-100/30 dark:bg-slate-800/30 transition-colors">
-                                        <td className="px-6 py-4 font-mono text-emerald-400">#{sequentialId}</td>
-                                        <td className="px-6 py-4 font-bold text-slate-900 dark:text-white">
-                                            {report.title || <span className="text-slate-400 font-normal">Inventário #{sequentialId}</span>}
-                                        </td>
-                                        <td className="px-6 py-4 text-slate-700 dark:text-slate-300 text-sm">
-                                            {report.createdAt?.toDate ? (
-                                                <div className="flex flex-col">
-                                                    <span>{report.createdAt.toDate().toLocaleDateString('pt-BR')}</span>
-                                                    <span className="text-xs text-slate-500 font-normal mt-0.5">{report.createdAt.toDate().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
+                                    <div key={report.id} className={`p-4 space-y-4 transition-colors ${isSelected ? 'bg-indigo-50/50 dark:bg-indigo-900/20' : 'hover:bg-slate-100/20 dark:bg-slate-800/20'}`}>
+                                        <div className="flex justify-between items-center">
+                                            <div className="flex items-center gap-3">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={isSelected}
+                                                    onChange={() => handleToggleSelectReport(report.id)}
+                                                    className="w-5 h-5 text-emerald-600 rounded border-slate-300 dark:border-slate-700 focus:ring-emerald-500 dark:bg-slate-800 cursor-pointer"
+                                                />
+                                                <div className="space-y-1">
+                                                    <p className="font-mono text-emerald-400 font-bold">#{sequentialId}</p>
+                                                    <div className="flex items-center gap-2">
+                                                        <p className="text-slate-500 text-[10px]">{dateText}</p>
+                                                        {report.locationName && (
+                                                            <span className="text-[10px] bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-1.5 py-0.5 rounded truncate max-w-[100px]">
+                                                                {report.locationName}
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                 </div>
-                                            ) : 'Processando...'}
-                                        </td>
-                                        <td className="px-6 py-4 text-slate-500 dark:text-slate-400 text-sm">
-                                            {report.updatedAt?.toDate ? (
-                                                <div className="flex flex-col">
-                                                    <span>{report.updatedAt.toDate().toLocaleDateString('pt-BR')}</span>
-                                                    <span className="text-xs font-normal mt-0.5">{report.updatedAt.toDate().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
-                                                </div>
-                                            ) : '-'}
-                                        </td>
-                                        <td className="px-6 py-4 text-center">
-                                            <span className="bg-emerald-500/10 text-emerald-400 px-3 py-1 rounded-full text-xs font-bold">
-                                                {report.totalItems} itens
+                                            </div>
+                                            <span className="bg-emerald-500/10 text-emerald-400 px-2 py-1 rounded-full text-[10px] font-bold">
+                                                {report.totalItems} ITENS
                                             </span>
-                                        </td>
-                                        <td className="px-6 py-4 text-right">
-                                            <div className="flex justify-end gap-2 text-nowrap">
+                                        </div>
+
+                                        <div className="flex items-center justify-between pt-2 border-t border-slate-200/50 dark:border-slate-800/50">
+                                            <div className="flex gap-2">
                                                 <button
                                                     onClick={() => {
                                                         setCurrentReport(report);
                                                         setReportItems(report.items);
                                                         setTitle(report.title || '');
+                                                        setSelectedLocationId(report.locationId || '');
                                                         setIsModalOpen(true);
                                                     }}
-                                                    className="p-2 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-white hover:bg-slate-200 dark:bg-slate-700 rounded-lg transition-all"
-                                                    title="Editar"
+                                                    className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg text-xs font-bold border border-slate-300 dark:border-slate-700"
                                                 >
-                                                    <Edit2 size={18} />
+                                                    <Edit2 size={14} />
+                                                    Editar
                                                 </button>
                                                 <button
                                                     onClick={() => handlePrintReport(report, sequentialId)}
-                                                    className="p-2 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-white hover:bg-slate-200 dark:bg-slate-700 rounded-lg transition-all"
-                                                    title="Imprimir"
+                                                    className="px-3 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg border border-slate-300 dark:border-slate-700"
                                                 >
-                                                    <Printer size={18} />
+                                                    <Printer size={14} />
                                                 </button>
                                                 <button
                                                     onClick={() => deleteReport(report.id)}
-                                                    className="p-2 text-slate-500 dark:text-slate-400 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-all"
-                                                    title="Excluir"
+                                                    className="px-3 py-2 bg-slate-100 dark:bg-slate-800 text-red-400 rounded-lg border border-slate-300 dark:border-slate-700"
                                                 >
-                                                    <Trash2 size={18} />
+                                                    <Trash2 size={14} />
                                                 </button>
                                             </div>
-                                        </td>
-                                    </tr>
+                                            <button
+                                                onClick={() => handleShare(report)}
+                                                className="p-2.5 bg-blue-600/10 text-blue-400 rounded-lg border border-blue-500/20"
+                                            >
+                                                <Share2 size={18} />
+                                            </button>
+                                        </div>
+                                    </div>
                                 );
                             })}
-                        </tbody>
-                    </table>
-                </div>
-
-                {/* Mobile View (Cards) */}
-                <div className="md:hidden divide-y divide-slate-200 dark:divide-slate-800">
-                    {reports.map((report, index) => {
-                        const sequentialId = reports.length - index;
-                        const dateText = report.createdAt?.toDate ? report.createdAt.toDate().toLocaleString('pt-BR') : 'Processando...';
-                        return (
-                            <div key={report.id} className="p-4 space-y-4 hover:bg-slate-100/20 dark:bg-slate-800/20 transition-colors">
-                                <div className="flex justify-between items-center">
-                                    <div className="space-y-1">
-                                        <p className="font-mono text-emerald-400 font-bold">#{sequentialId}</p>
-                                        <p className="text-slate-500 text-[10px]">{dateText}</p>
-                                    </div>
-                                    <span className="bg-emerald-500/10 text-emerald-400 px-2 py-1 rounded-full text-[10px] font-bold">
-                                        {report.totalItems} ITENS
-                                    </span>
+                            {reports.length === 0 && (
+                                <div className="p-12 text-center text-slate-500 italic text-sm">
+                                    Nenhum relatório cadastrado.
                                 </div>
-
-                                <div className="flex items-center justify-between pt-2 border-t border-slate-200/50 dark:border-slate-800/50">
-                                    <div className="flex gap-2">
-                                        <button
-                                            onClick={() => {
-                                                setCurrentReport(report);
-                                                setReportItems(report.items);
-                                                setTitle(report.title || '');
-                                                setIsModalOpen(true);
-                                            }}
-                                            className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg text-xs font-bold border border-slate-300 dark:border-slate-700"
-                                        >
-                                            <Edit2 size={14} />
-                                            Editar
-                                        </button>
-                                        <button
-                                            onClick={() => handlePrintReport(report, sequentialId)}
-                                            className="px-3 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg border border-slate-300 dark:border-slate-700"
-                                        >
-                                            <Printer size={14} />
-                                        </button>
-                                        <button
-                                            onClick={() => deleteReport(report.id)}
-                                            className="px-3 py-2 bg-slate-100 dark:bg-slate-800 text-red-400 rounded-lg border border-slate-300 dark:border-slate-700"
-                                        >
-                                            <Trash2 size={14} />
-                                        </button>
-                                    </div>
-                                    <button
-                                        onClick={() => handleShare(report)}
-                                        className="p-2.5 bg-blue-600/10 text-blue-400 rounded-lg border border-blue-500/20"
-                                    >
-                                        <Share2 size={18} />
-                                    </button>
-                                </div>
-                            </div>
-                        );
-                    })}
-                    {reports.length === 0 && (
-                        <div className="p-12 text-center text-slate-500 italic text-sm">
-                            Nenhum relatório cadastrado.
+                            )}
                         </div>
-                    )}
-                </div>
+                    </>
+                )}
             </div>
 
             {isModalOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-2 md:p-4 bg-black/80 backdrop-blur-md">
                     <div className="bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-4xl max-h-[95vh] flex flex-col shadow-2xl overflow-hidden">
-                        <div className="p-4 md:p-6 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-white/50 dark:bg-slate-900/50 gap-4">
-                            <input
-                                type="text"
-                                value={title}
-                                onChange={(e) => setTitle(e.target.value)}
-                                placeholder={currentReport ? `Inventário #${reports.length - reports.findIndex(r => r.id === currentReport.id)}` : `Inventário #${reports.length + 1}`}
-                                className="flex-1 text-xl md:text-2xl font-bold text-slate-900 dark:text-white bg-transparent border-none outline-none focus:ring-0 px-2 placeholder-slate-400 dark:placeholder-slate-600 truncate"
-                            />
-                            <button onClick={() => { setIsModalOpen(false); setReportItems([]); setTitle(''); setCurrentReport(null); stopScanner(); }} className="text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-white shrink-0">
+                        <div className="p-4 md:p-6 border-b border-slate-200 dark:border-slate-800 flex flex-col md:flex-row justify-between md:items-center bg-white/50 dark:bg-slate-900/50 gap-4">
+                            <div className="flex-1 flex flex-col md:flex-row gap-4 items-center">
+                                <input
+                                    type="text"
+                                    value={title}
+                                    onChange={(e) => setTitle(e.target.value)}
+                                    placeholder={currentReport ? `Inventário #${reports.length - reports.findIndex(r => r.id === currentReport.id)}` : `Inventário #${reports.length + 1}`}
+                                    className="w-full md:w-auto flex-1 text-xl md:text-2xl font-bold text-slate-900 dark:text-white bg-transparent border-none outline-none focus:ring-0 px-2 placeholder-slate-400 dark:placeholder-slate-600 truncate"
+                                />
+                                <select
+                                    value={selectedLocationId}
+                                    onChange={(e) => setSelectedLocationId(e.target.value)}
+                                    className="w-full md:w-auto bg-slate-100 dark:bg-slate-800 border border-emerald-500/30 rounded-lg px-4 py-2 text-slate-700 dark:text-slate-300 font-bold focus:ring-2 focus:ring-emerald-500 outline-none"
+                                >
+                                    <option value="" disabled>Selecione um Local</option>
+                                    {locations.map(loc => (
+                                        <option key={loc.id} value={loc.id}>{loc.name}</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <button onClick={() => { setIsModalOpen(false); setReportItems([]); setTitle(''); setSelectedLocationId(''); setCurrentReport(null); setIsScanning(false); }} className="absolute md:static top-4 right-4 md:top-auto md:right-auto text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-white shrink-0">
                                 <X size={24} />
                             </button>
                         </div>
@@ -733,19 +644,19 @@ const Inventario = () => {
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-white/50 dark:bg-slate-900/50 p-4 rounded-xl border border-slate-200 dark:border-slate-800">
                                 <div className="md:col-span-2 relative">
                                     <label className="block text-xs font-semibold text-slate-500 uppercase mb-2 ml-1">Produto (SKU ou Descrição)</label>
-                                    <div className="relative flex items-center gap-2">
-                                        <div className="relative flex-1">
-                                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
-                                            <input
-                                                type="text"
-                                                ref={skuInputRef}
-                                                autoFocus
-                                                placeholder="Inserir SKU ou Descrição"
-                                                className="w-full pl-10 pr-10 py-3 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 outline-none"
-                                                value={selectedProduct ? `${selectedProduct.sku} - ${selectedProduct.description}` : searchTerm}
-                                                onChange={(e) => !selectedProduct && handleSearchProduct(e.target.value)}
-                                                readOnly={!!selectedProduct}
-                                            />
+                                    <div className="relative">
+                                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
+                                        <input
+                                            type="text"
+                                            ref={skuInputRef}
+                                            autoFocus
+                                            placeholder="Inserir SKU ou Descrição"
+                                            className="w-full pl-10 pr-20 py-3 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 outline-none"
+                                            value={selectedProduct ? `${selectedProduct.sku} - ${selectedProduct.description}` : searchTerm}
+                                            onChange={(e) => !selectedProduct && handleSearchProduct(e.target.value)}
+                                            readOnly={!!selectedProduct}
+                                        />
+                                        <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
                                             {(selectedProduct || searchTerm) && (
                                                 <button
                                                     onClick={() => {
@@ -754,32 +665,26 @@ const Inventario = () => {
                                                         setProducts([]);
                                                         skuInputRef.current?.focus();
                                                     }}
-                                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-900 dark:text-white"
+                                                    className="text-slate-500 hover:text-slate-900 dark:text-white p-1"
                                                 >
                                                     <X size={18} />
                                                 </button>
                                             )}
-                                        </div>
-                                        <button
-                                            onClick={isScanning ? stopScanner : startScanner}
-                                            className={`p-3 rounded-lg flex-shrink-0 transition-all text-white ${isScanning ? 'bg-red-500 hover:bg-red-600' : 'bg-slate-700 hover:bg-slate-800 dark:bg-slate-600 dark:hover:bg-slate-500'}`}
-                                            title={isScanning ? "Parar Scanner" : "Ler Código"}
-                                        >
-                                            {isScanning ? <StopCircle size={24} /> : <ScanBarcode size={24} />}
-                                        </button>
-                                    </div>
-
-                                    {isScanning && (
-                                        <div className="mt-4 rounded-xl overflow-hidden border-2 border-slate-300 dark:border-slate-700 relative h-64 md:h-80 w-full bg-black">
-                                            <div id="inventory-reader" className="w-full h-full"></div>
                                             <button
-                                                onClick={stopScanner}
-                                                className="absolute top-2 right-2 p-2 bg-red-500 text-white rounded-full hover:bg-red-600 shadow-lg z-10"
+                                                onClick={isScanning ? () => setIsScanning(false) : startScanner}
+                                                className="text-slate-500 hover:text-emerald-500 dark:hover:text-emerald-400 p-1 bg-white dark:bg-slate-800 rounded-lg shadow-sm ml-1"
+                                                title={isScanning ? "Parar Scanner" : "Ler Código"}
                                             >
-                                                <X size={20} />
+                                                {isScanning ? <StopCircle size={20} /> : <ScanBarcode size={20} />}
                                             </button>
                                         </div>
-                                    )}
+                                    </div>
+
+                                    <ScannerModal
+                                        isOpen={isScanning}
+                                        onClose={() => setIsScanning(false)}
+                                        onScan={handleScan}
+                                    />
 
                                     {products.length > 0 && !selectedProduct && (
                                         <div className="absolute z-10 w-full mt-1 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg shadow-xl max-h-48 overflow-y-auto">

@@ -3,11 +3,19 @@ import { onAuthStateChanged, type User } from 'firebase/auth';
 import { doc, getDoc, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '../db/firebase';
 
+interface UserPermissions {
+    inventory: boolean;
+    tested: boolean;
+    delivery: boolean;
+}
+
 interface AuthContextType {
     user: User | null;
     loading: boolean;
     isAdmin: boolean;
     isApproved: boolean;
+    userStatus: 'active' | 'blocked';
+    permissions: UserPermissions | null;
     allowRegistration: boolean;
 }
 
@@ -16,6 +24,8 @@ const AuthContext = createContext<AuthContextType>({
     loading: true,
     isAdmin: false,
     isApproved: false,
+    userStatus: 'active',
+    permissions: null,
     allowRegistration: true
 });
 
@@ -24,6 +34,8 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
     const [loading, setLoading] = useState(true);
     const [isAdmin, setIsAdmin] = useState(false);
     const [isApproved, setIsApproved] = useState(false);
+    const [userStatus, setUserStatus] = useState<'active' | 'blocked'>('active');
+    const [permissions, setPermissions] = useState<UserPermissions | null>(null);
     const [allowRegistration, setAllowRegistration] = useState(true);
 
     useEffect(() => {
@@ -44,13 +56,23 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
                     const data = userDoc.data();
                     setIsAdmin(data.role === 'admin');
                     setIsApproved(data.approved === true || data.role === 'admin');
+                    setUserStatus(data.status === 'blocked' ? 'blocked' : 'active');
+                    setPermissions(data.permissions || {
+                        inventory: true,
+                        tested: true,
+                        delivery: true
+                    });
                 } else {
                     setIsAdmin(false);
                     setIsApproved(false);
+                    setUserStatus('active');
+                    setPermissions(null);
                 }
             } else {
                 setIsAdmin(false);
                 setIsApproved(false);
+                setUserStatus('active');
+                setPermissions(null);
             }
             setLoading(false);
         });
@@ -62,7 +84,7 @@ export const AuthProvider: FC<{ children: ReactNode }> = ({ children }) => {
     }, []);
 
     return (
-        <AuthContext.Provider value={{ user, loading, isAdmin, isApproved, allowRegistration }}>
+        <AuthContext.Provider value={{ user, loading, isAdmin, isApproved, userStatus, permissions, allowRegistration }}>
             {children}
         </AuthContext.Provider>
     );

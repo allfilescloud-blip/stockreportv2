@@ -1,0 +1,12 @@
+﻿src/pages/Inventario.tsx(8,5): error TS2300: Duplicate identifier 'limit'.
+src/pages/Inventario.tsx(14,5): error TS2300: Duplicate identifier 'limit'.
+src/pages/Produtos.tsx(238,46): error TS7006: Parameter 'p' implicitly has an 'any' type.
+src/pages/Produtos.tsx(247,14): error TS7006: Parameter 'a' implicitly has an 'any' type.
+src/pages/Produtos.tsx(247,17): error TS7006: Parameter 'b' implicitly has an 'any' type.
+src/pages/Produtos.tsx(455,118): error TS7006: Parameter 'p' implicitly has an 'any' type.
+src/pages/Produtos.tsx(456,116): error TS7006: Parameter 'p' implicitly has an 'any' type.
+src/pages/Produtos.tsx(502,72): error TS7006: Parameter 'p' implicitly has an 'any' type.
+src/pages/Produtos.tsx(612,51): error TS7006: Parameter 'product' implicitly has an 'any' type.
+src/pages/Produtos.tsx(671,43): error TS7006: Parameter 'product' implicitly has an 'any' type.
+src/pages/Testados.tsx(62,12): error TS6133: 'selectedReports' is declared but its value is never read.
+src/pages/Testados.tsx(62,29): error TS6133: 'setSelectedReports' is declared but its value is never read.

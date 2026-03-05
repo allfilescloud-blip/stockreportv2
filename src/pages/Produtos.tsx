@@ -1,10 +1,8 @@
-import { useState, useEffect, type FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
 import {
     collection,
     addDoc,
-    onSnapshot,
     query,
-    orderBy,
     updateDoc,
     doc,
     serverTimestamp,
@@ -13,11 +11,11 @@ import {
     where
 } from 'firebase/firestore';
 import { db } from '../db/firebase';
-import { Plus, Search, Edit2, History, X, Printer, Filter, Info, ScanBarcode, StopCircle, ChevronUp, ChevronDown, ChevronsUpDown, Share2 } from 'lucide-react';
+import { Plus, Search, Edit2, History, X, Printer, Filter, Info, ScanBarcode, ChevronUp, ChevronDown, ChevronsUpDown, Share2 } from 'lucide-react';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { Html5Qrcode } from 'html5-qrcode';
-import { useRef } from 'react';
+import { useProducts } from '../contexts/ProductsContext';
+import { ScannerModal } from '../components/ScannerModal';
 
 interface Product {
     id: string;
@@ -30,7 +28,7 @@ interface Product {
 }
 
 const Produtos = () => {
-    const [products, setProducts] = useState<Product[]>([]);
+    const { products } = useProducts() as any;
     const [searchTerm, setSearchTerm] = useState('');
     const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -48,16 +46,8 @@ const Produtos = () => {
 
     // Scanner states
     const [activeScanner, setActiveScanner] = useState<'ean' | 'model' | null>(null);
-    const html5QrCodeRef = useRef<Html5Qrcode | null>(null);
 
-    useEffect(() => {
-        const q = query(collection(db, 'products'), orderBy('sku', 'asc'));
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-            const prods = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Product));
-            setProducts(prods);
-        });
-        return () => unsubscribe();
-    }, []);
+
 
     const handleSubmit = async (e: FormEvent) => {
         e.preventDefault();
@@ -128,92 +118,13 @@ const Produtos = () => {
         resetForm();
     };
 
-    const playSound = (type: 'success' | 'error') => {
-        const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-        const oscillator = audioContext.createOscillator();
-        const gainNode = audioContext.createGain();
-
-        oscillator.connect(gainNode);
-        gainNode.connect(audioContext.destination);
-
-        if (type === 'success') {
-            oscillator.type = 'sine';
-            oscillator.frequency.setValueAtTime(800, audioContext.currentTime);
-            oscillator.frequency.exponentialRampToValueAtTime(1200, audioContext.currentTime + 0.1);
-            gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
-            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
-            oscillator.start();
-            oscillator.stop(audioContext.currentTime + 0.1);
+    const handleScan = (decodedText: string) => {
+        if (activeScanner === 'ean') {
+            setEan(decodedText);
+        } else if (activeScanner === 'model') {
+            setModel(decodedText);
         }
-    };
-
-    const startScanner = async (target: 'ean' | 'model') => {
-        if (activeScanner) return;
-
-        // Activate scanner state FIRST so the element is rendered in DOM
-        setActiveScanner(target);
-
-        setTimeout(async () => {
-            try {
-                const elementId = `product-${target}-reader`;
-                const element = document.getElementById(elementId);
-
-                if (!element) {
-                    console.error("Elemento do scanner não encontrado no DOM");
-                    setActiveScanner(null);
-                    return;
-                }
-
-                const html5QrCode = new Html5Qrcode(elementId);
-                html5QrCodeRef.current = html5QrCode;
-
-                const devices = await Html5Qrcode.getCameras();
-                if (devices && devices.length) {
-                    let cameraId = devices[0].id;
-                    const backCamera = devices.find(d =>
-                        d.label.toLowerCase().includes('back') ||
-                        d.label.toLowerCase().includes('traseira')
-                    );
-                    if (backCamera) cameraId = backCamera.id;
-
-                    await html5QrCode.start(
-                        cameraId,
-                        {
-                            fps: 10,
-                            qrbox: { width: 250, height: 150 },
-                        },
-                        (decodedText) => {
-                            if (target === 'ean') setEan(decodedText);
-                            else setModel(decodedText);
-
-                            playSound('success');
-                            stopScanner();
-                        },
-                        () => { }
-                    );
-                } else {
-                    console.error("Nenhuma câmera encontrada");
-                    setActiveScanner(null);
-                }
-            } catch (err) {
-                console.error("Erro ao iniciar scanner:", err);
-                setActiveScanner(null);
-            }
-        }, 150); // Small delay to ensure React finish rendering the element
-    };
-
-    const stopScanner = async () => {
-        if (html5QrCodeRef.current) {
-            try {
-                await html5QrCodeRef.current.stop();
-                html5QrCodeRef.current.clear();
-            } catch (err) {
-                console.warn("Erro ao parar scanner:", err);
-            } finally {
-                html5QrCodeRef.current = null;
-                setActiveScanner(null);
-            }
-        }
+        setActiveScanner(null);
     };
 
     const handleSort = (column: 'sku' | 'description') => {
@@ -231,7 +142,7 @@ const Produtos = () => {
     };
 
     const resetForm = () => {
-        stopScanner();
+        setActiveScanner(null);
         setSku('');
         setEan('');
         setDescription('');
@@ -243,7 +154,7 @@ const Produtos = () => {
     };
 
 
-    const filteredProducts = products.filter(p => {
+    const filteredProducts = products.filter((p: Product) => {
         const matchesSearch = p.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
             p.ean?.toLowerCase().includes(searchTerm.toLowerCase()) ||
             p.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -252,9 +163,9 @@ const Produtos = () => {
         const matchesStatus = statusFilter === 'all' || p.status === statusFilter;
 
         return matchesSearch && matchesStatus;
-    }).sort((a, b) => {
-        const valA = a[sortColumn] || '';
-        const valB = b[sortColumn] || '';
+    }).sort((a: Product, b: Product) => {
+        const valA = (a as any)[sortColumn] || '';
+        const valB = (b as any)[sortColumn] || '';
 
         return sortDirection === 'asc'
             ? valA.localeCompare(valB, undefined, { numeric: true, sensitivity: 'base' })
@@ -460,8 +371,8 @@ const Produtos = () => {
                     <p className="text-slate-500 dark:text-slate-400">Gerencie seu catálogo de itens</p>
                     <div className="flex gap-4 mt-2 text-sm font-bold uppercase tracking-wider">
                         <span className="text-slate-500">Total: <span className="text-slate-700 dark:text-slate-300">{products.length}</span></span>
-                        <span className="text-slate-500">Ativos: <span className="text-emerald-500">{products.filter(p => p.status === 'active').length}</span></span>
-                        <span className="text-slate-500">Inativos: <span className="text-red-500">{products.filter(p => p.status === 'inactive').length}</span></span>
+                        <span className="text-slate-500">Ativos: <span className="text-emerald-500">{products.filter((p: Product) => p.status === 'active').length}</span></span>
+                        <span className="text-slate-500">Inativos: <span className="text-red-500">{products.filter((p: Product) => p.status === 'inactive').length}</span></span>
                     </div>
                 </div>
                 <div className="flex items-center gap-3">
@@ -507,7 +418,7 @@ const Produtos = () => {
                                                 </tr>
                                             </thead>
                                             <tbody>
-                                                ${filteredProducts.map(p => `
+                                                ${filteredProducts.map((p: Product) => `
                                                     <tr>
                                                         <td>${p.sku}</td>
                                                         <td>${p.ean || '-'}</td>
@@ -617,7 +528,7 @@ const Produtos = () => {
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
-                            {filteredProducts.map(product => (
+                            {filteredProducts.map((product: Product) => (
                                 <tr key={product.id} className="hover:bg-slate-100/30 dark:bg-slate-800/30 transition-colors">
                                     <td className="px-6 py-4 font-mono text-blue-400 text-nowrap text-sm">{product.sku}</td>
                                     <td className="px-6 py-4 font-mono text-slate-500 dark:text-slate-400 text-nowrap text-xs">{product.ean || '-'}</td>
@@ -676,7 +587,7 @@ const Produtos = () => {
 
                 {/* Layout Mobile (Cards) */}
                 <div className="md:hidden divide-y divide-slate-200 dark:divide-slate-800">
-                    {filteredProducts.map(product => (
+                    {filteredProducts.map((product: Product) => (
                         <div key={product.id} className="p-4 space-y-4 hover:bg-slate-100/20 dark:bg-slate-800/20 transition-colors">
                             <div className="flex justify-between items-start">
                                 <div className="space-y-1">
@@ -771,33 +682,24 @@ const Produtos = () => {
                             </div>
                             <div>
                                 <label className="block text-xs font-semibold text-slate-500 uppercase mb-2 ml-1">EAN (Código de Barras)</label>
-                                <div className="flex gap-2">
+                                <div className="relative">
                                     <input
                                         value={ean}
                                         onChange={(e) => setEan(e.target.value)}
-                                        className="flex-1 px-4 py-3 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                                        className="w-full pl-4 pr-12 py-3 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all"
                                         placeholder="Ex: 7891234567890"
                                     />
-                                    <button
-                                        type="button"
-                                        onClick={activeScanner === 'ean' ? stopScanner : () => startScanner('ean')}
-                                        className={`p-3 rounded-lg border transition-all active:scale-95 ${activeScanner === 'ean'
-                                            ? 'bg-red-500/10 border-red-500 text-red-500 animate-pulse'
-                                            : 'bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:text-white hover:bg-slate-200 dark:bg-slate-700'
-                                            }`}
-                                        title={activeScanner === 'ean' ? "Parar Leitura" : "Escanear EAN"}
-                                    >
-                                        {activeScanner === 'ean' ? <StopCircle size={24} /> : <ScanBarcode size={24} />}
-                                    </button>
-                                </div>
-                                {activeScanner === 'ean' && (
-                                    <div className="mt-4 overflow-hidden rounded-xl bg-black border border-blue-500/30">
-                                        <div id="product-ean-reader" className="w-full"></div>
-                                        <div className="bg-white/80 dark:bg-slate-900/80 py-2 text-center text-[10px] text-blue-400 font-bold uppercase tracking-widest">
-                                            Aponte para o código
-                                        </div>
+                                    <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center">
+                                        <button
+                                            type="button"
+                                            onClick={() => setActiveScanner('ean')}
+                                            className="text-slate-500 hover:text-blue-500 dark:hover:text-blue-400 p-2 bg-white dark:bg-slate-900 rounded-lg shadow-sm"
+                                            title="Escanear EAN"
+                                        >
+                                            <ScanBarcode size={20} />
+                                        </button>
                                     </div>
-                                )}
+                                </div>
                             </div>
                             <div>
                                 <label className="block text-xs font-semibold text-slate-500 uppercase mb-2 ml-1">Descrição</label>
@@ -811,34 +713,24 @@ const Produtos = () => {
                             </div>
                             <div>
                                 <label className="block text-xs font-semibold text-slate-500 uppercase mb-2 ml-1">Modelo</label>
-                                <div className="flex gap-2">
+                                <div className="relative">
                                     <input
                                         value={model}
                                         onChange={(e) => setModel(e.target.value)}
-                                        className="flex-1 px-4 py-3 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                                        className="w-full pl-4 pr-12 py-3 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all"
                                         placeholder="Ex: iPhone 13 Pro"
                                     />
-                                    <button
-                                        type="button"
-                                        onClick={activeScanner === 'model' ? stopScanner : () => startScanner('model')}
-                                        className={`p-3 rounded-lg border transition-all active:scale-95 ${activeScanner === 'model'
-                                            ? 'bg-red-500/10 border-red-500 text-red-500 animate-pulse'
-                                            : 'bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:text-white hover:bg-slate-200 dark:bg-slate-700'
-                                            }`}
-                                        title={activeScanner === 'model' ? "Parar Leitura" : "Escanear Modelo"}
-                                    >
-                                        {activeScanner === 'model' ? <StopCircle size={24} /> : <ScanBarcode size={24} />}
-                                    </button>
-                                </div>
-
-                                {activeScanner === 'model' && (
-                                    <div className="mt-4 overflow-hidden rounded-xl bg-black border border-blue-500/30">
-                                        <div id="product-model-reader" className="w-full"></div>
-                                        <div className="bg-white/80 dark:bg-slate-900/80 py-2 text-center text-[10px] text-blue-400 font-bold uppercase tracking-widest">
-                                            Aponte para o código
-                                        </div>
+                                    <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center">
+                                        <button
+                                            type="button"
+                                            onClick={() => setActiveScanner('model')}
+                                            className="text-slate-500 hover:text-blue-500 dark:hover:text-blue-400 p-2 bg-white dark:bg-slate-900 rounded-lg shadow-sm"
+                                            title="Escanear Modelo"
+                                        >
+                                            <ScanBarcode size={20} />
+                                        </button>
                                     </div>
-                                )}
+                                </div>
                             </div>
                             <div>
                                 <label className="block text-xs font-semibold text-slate-500 uppercase mb-2 ml-1">Status</label>
@@ -861,6 +753,12 @@ const Produtos = () => {
                     </div >
                 </div >
             )}
+
+            <ScannerModal
+                isOpen={!!activeScanner}
+                onClose={() => setActiveScanner(null)}
+                onScan={handleScan}
+            />
 
             {/* Modal Histórico */}
             {

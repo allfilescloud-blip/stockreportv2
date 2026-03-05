@@ -1,0 +1,2 @@
+﻿src/App.tsx(7,10): error TS2300: Duplicate identifier 'ErrorBoundary'.
+src/App.tsx(20,10): error TS2300: Duplicate identifier 'ErrorBoundary'.

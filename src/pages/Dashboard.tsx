@@ -4,19 +4,22 @@ import {
     onSnapshot,
     query,
     orderBy,
-    limit
+    limit,
+    where
 } from 'firebase/firestore';
 import { db } from '../db/firebase';
 import {
     Package,
     ClipboardList,
-    CheckCircle,
     Truck,
     TrendingUp,
-    Activity
+    Activity,
+    CheckCircle
 } from 'lucide-react';
+import { useProducts } from '../contexts/ProductsContext';
 
 const Dashboard = () => {
+    const { products } = useProducts();
     const [stats, setStats] = useState({
         products: 0,
         inventories: 0,
@@ -27,33 +30,49 @@ const Dashboard = () => {
     const [recentReports, setRecentReports] = useState<any[]>([]);
 
     useEffect(() => {
-        // Stats
-        const unsubProducts = onSnapshot(collection(db, 'products'), (s) =>
-            setStats(prev => ({ ...prev, products: s.size }))
-        );
-
+        // Query param para Relatórios Recentes
         const qReports = query(collection(db, 'reports'), orderBy('createdAt', 'desc'), limit(5));
         const unsubReports = onSnapshot(qReports, (s) => {
-            const reps = s.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            const reps = s.docs.map(doc => ({ id: doc.id, ...(doc.data() as any) }));
             setRecentReports(reps);
+        });
 
-            // Calculate individual stats
-            const counts = { inventories: 0, tested: 0, deliveries: 0 };
-            // Realmente precisaríamos de queries separadas para contagem total ou agregar
-            setStats(prev => ({ ...prev, ...counts }));
+        // Query param para Estatísticas dos Últimos 30 Dias
+        const thirtyDaysAgo = new Date();
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+        const qStats = query(
+            collection(db, 'reports'),
+            where('createdAt', '>=', thirtyDaysAgo)
+        );
+
+        const unsubStats = onSnapshot(qStats, (s) => {
+            let inventories = 0;
+            let tested = 0;
+            let deliveries = 0;
+
+            s.docs.forEach(doc => {
+                const data = doc.data() as any;
+                const type = data.type;
+                if (type === 'inventory') inventories++;
+                else if (type === 'tested') tested++;
+                else if (type === 'delivery') deliveries++;
+            });
+
+            setStats(prev => ({ ...prev, inventories, tested, deliveries }));
         });
 
         return () => {
-            unsubProducts();
             unsubReports();
+            unsubStats();
         };
     }, []);
 
     const cards = [
-        { title: 'Total de Produtos', value: stats.products, icon: Package, color: 'text-blue-500', bg: 'bg-blue-500/10' },
-        { title: 'Inventários', value: stats.inventories, icon: ClipboardList, color: 'text-emerald-500', bg: 'bg-emerald-500/10' },
-        { title: 'Testados', value: stats.tested, icon: CheckCircle, color: 'text-blue-400', bg: 'bg-blue-400/10' },
-        { title: 'Entregas', value: stats.deliveries, icon: Truck, color: 'text-purple-500', bg: 'bg-purple-500/10' },
+        { title: 'Total de Produtos', value: products.length, icon: Package, color: 'text-blue-500', bg: 'bg-blue-500/10' },
+        { title: 'Inventários (30d)', value: stats.inventories, icon: ClipboardList, color: 'text-emerald-500', bg: 'bg-emerald-500/10' },
+        { title: 'Testados (30d)', value: stats.tested, icon: CheckCircle, color: 'text-blue-400', bg: 'bg-blue-400/10' },
+        { title: 'Entregas (30d)', value: stats.deliveries, icon: Truck, color: 'text-purple-500', bg: 'bg-purple-500/10' },
     ];
 
     return (
@@ -95,7 +114,9 @@ const Dashboard = () => {
                                             report.type === 'tested' ? <CheckCircle size={20} /> : <Truck size={20} />}
                                     </div>
                                     <div>
-                                        <p className="text-slate-900 dark:text-white font-medium capitalize">{report.type}</p>
+                                        <p className="text-slate-900 dark:text-white font-medium capitalize">
+                                            {report.type === 'inventory' ? 'Inventário' : report.type === 'tested' ? 'Testado' : 'Entrega'}
+                                        </p>
                                         <p className="text-xs text-slate-500">
                                             {report.createdAt?.toDate?.().toLocaleString('pt-BR') || 'Agora'}
                                         </p>

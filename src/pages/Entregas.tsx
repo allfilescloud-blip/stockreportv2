@@ -1,21 +1,20 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useRef } from 'react';
 import {
     collection,
     addDoc,
-    onSnapshot,
-    query,
-    orderBy,
     updateDoc,
     doc,
     arrayUnion,
     serverTimestamp,
-    getDocs,
-    deleteDoc
+    deleteDoc,
 } from 'firebase/firestore';
 import { db } from '../db/firebase';
-import { Search, Plus, Printer, Trash2, Edit2, X, AlertTriangle, Share2, ClipboardList, Eye, Calculator, Layers } from 'lucide-react';
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
+import { Search, Plus, Printer, Trash2, Edit2, X, AlertTriangle, Share2, ClipboardList, Eye, Calculator, Layers, ScanBarcode, StopCircle } from 'lucide-react';
+import { shareReport, printWebReport } from '../utils/reportUtils';
+import { ScannerModal } from '../components/ScannerModal';
+import { useProducts } from '../contexts/ProductsContext';
+import { useReports } from '../hooks/useReports';
+import { ReportSkeleton } from '../components/ReportSkeleton';
 
 interface ReportItem {
     productId: string;
@@ -37,8 +36,8 @@ interface Report {
 }
 
 const Entregas = () => {
-    const [reports, setReports] = useState<Report[]>([]);
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const { products: allProducts } = useProducts();
     const [searchTerm, setSearchTerm] = useState('');
     const [products, setProducts] = useState<any[]>([]);
     const [reportItems, setReportItems] = useState<ReportItem[]>([]);
@@ -57,44 +56,35 @@ const Entregas = () => {
     const [showReportDeleteConfirm, setShowReportDeleteConfirm] = useState(false);
     const [reportIdToDelete, setReportIdToDelete] = useState<string | null>(null);
     const [selectedReports, setSelectedReports] = useState<string[]>([]);
+    const [isScanning, setIsScanning] = useState(false);
+
+    const { reports, loading } = useReports<Report>('delivery', filterDate);
 
     const skuInputRef = useRef<HTMLInputElement>(null);
     const quantityInputRef = useRef<HTMLInputElement>(null);
     const sumInputRef = useRef<HTMLInputElement>(null);
 
-    useEffect(() => {
-        const q = query(
-            collection(db, 'reports'),
-            orderBy('createdAt', 'asc')
-        );
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-            const allReps = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Report));
-            // Filtramos no cliente por tipo e data
-            const filtered = allReps.filter(r => {
-                const isCorrectType = r.type === 'delivery';
-                if (!isCorrectType) return false;
+    const startScanner = () => setIsScanning(true);
 
-                if (filterDate) {
-                    const reportDate = r.createdAt?.toDate ? r.createdAt.toDate().toLocaleDateString('en-CA') : '';
-                    return reportDate === filterDate;
-                }
+    const handleScan = (decodedText: string) => {
+        const found = allProducts.find(p => p.sku.toLowerCase() === decodedText.toLowerCase() || (p.ean && p.ean.toLowerCase() === decodedText.toLowerCase()));
+        if (found) {
+            setSelectedProduct(found);
+            setSearchTerm('');
+            setProducts([]);
+            setTimeout(() => quantityInputRef.current?.focus(), 10);
+        } else {
+            handleSearchProduct(decodedText);
+        }
+    };
 
-                return true;
-            });
-            setReports(filtered.reverse());
-        });
-        return () => unsubscribe();
-    }, [filterDate]);
-
-    const handleSearchProduct = async (term: string) => {
+    const handleSearchProduct = (term: string) => {
         setSearchTerm(term);
         if (term.length < 2) {
             setProducts([]);
             return;
         }
-        const snapshot = await getDocs(collection(db, 'products'));
-        const results = snapshot.docs
-            .map(doc => ({ id: doc.id, ...doc.data() }))
+        const results = allProducts
             .filter((p: any) =>
                 p.status === 'active' &&
                 (p.sku.toLowerCase().includes(term.toLowerCase()) ||
@@ -219,137 +209,11 @@ const Entregas = () => {
 
     const handleShare = async (report: Report) => {
         const sequentialId = reports.length - reports.findIndex(r => r.id === report.id);
-        const dateText = report.createdAt?.toDate ? report.createdAt.toDate().toLocaleString('pt-BR') : 'Processando...';
-        const reportTitle = report.title || `Entrega #${sequentialId}`;
-
-        // Criar PDF
-        const doc = new jsPDF();
-
-        // Cabeçalho do PDF
-        doc.setFontSize(20);
-        doc.text(reportTitle, 15, 20);
-        doc.setFontSize(10);
-        doc.text(`Data: ${dateText}`, 15, 30);
-        doc.text(`Total de Itens: ${report.totalItems}`, 150, 30);
-        doc.line(15, 35, 195, 35);
-
-        if (report.notes) {
-            doc.setFontSize(10);
-            doc.setFont('helvetica', 'bold');
-            doc.text('Observações:', 15, 42);
-            doc.setFont('helvetica', 'normal');
-            const splitNotes = doc.splitTextToSize(report.notes, 180);
-            doc.text(splitNotes, 15, 47);
-            doc.line(15, 47 + (splitNotes.length * 5), 195, 47 + (splitNotes.length * 5));
-        }
-
-        // Tabela de itens
-        const tableData = [...report.items]
-            .sort((a, b) => a.sku.localeCompare(b.sku, undefined, { numeric: true, sensitivity: 'base' }))
-            .map(item => [
-                item.sku,
-                item.description,
-                item.currentCount.toString()
-            ]);
-
-        autoTable(doc, {
-            startY: report.notes ? 55 + (doc.splitTextToSize(report.notes, 180).length * 5) : 40,
-            head: [['SKU', 'Descrição', 'Quantidade']],
-            body: tableData,
-            headStyles: { fillColor: [226, 232, 240], textColor: [51, 65, 85] },
-            alternateRowStyles: { fillColor: [241, 245, 249] },
-        });
-
-        const pdfBlob = doc.output('blob');
-        const pdfFile = new File([pdfBlob], `entrega_${sequentialId}.pdf`, { type: 'application/pdf' });
-
-        let shareText = `📊 *${reportTitle}*\n📅 *Data:* ${dateText}\n📝 *Itens:* ${report.totalItems}`;
-        if (report.notes) {
-            shareText += `\n\n📝 *Observações:* ${report.notes}`;
-        }
-
-        if (navigator.share && navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
-            try {
-                await navigator.share({
-                    files: [pdfFile],
-                    title: reportTitle,
-                    text: shareText
-                });
-            } catch (error) {
-                if ((error as any).name !== 'AbortError') {
-                    console.error('Erro ao compartilhar:', error);
-                }
-            }
-        } else if (navigator.share) {
-            try {
-                await navigator.share({
-                    title: reportTitle,
-                    text: shareText
-                });
-            } catch (error) {
-                console.error('Erro ao compartilhar texto:', error);
-            }
-        } else {
-            navigator.clipboard.writeText(shareText);
-            alert('Informações copiadas para a área de transferência!');
-        }
+        await shareReport(report, sequentialId);
     };
 
     const handlePrintReport = (report: Report, sequentialId: number) => {
-        const printWindow = window.open('', '_blank');
-        if (!printWindow) return;
-
-        const reportTitle = report.title || `Entrega #${sequentialId}`;
-
-        const html = `
-            <html>
-                <head>
-                    <title>${reportTitle}</title>
-                    <style>
-                        body { font-family: sans-serif; padding: 20px; color: #333; }
-                        table { width: 100%; border-collapse: collapse; margin-top: 20px; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-                        th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
-                        th { background-color: #e2e8f0 !important; }
-                        tbody tr:nth-child(even) { background-color: #f2f2f2 !important; }
-                        .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #333; padding-bottom: 10px; }
-                    </style>
-                </head>
-                <body>
-                    <div class="header">
-                        <div>
-                            <h1>${reportTitle}</h1>
-                            <p>Data: ${report.createdAt?.toDate ? report.createdAt.toDate().toLocaleString('pt-BR') : new Date().toLocaleString('pt-BR')}</p>
-                        </div>
-                        <div style="text-align: right">
-                            <p>Total de Itens: ${report.totalItems}</p>
-                        </div>
-                    </div>
-                    ${report.notes ? `<div style="margin-top: 15px; padding: 10px; background: #f8fafc; border-left: 4px solid #333;"><p style="margin:0; font-weight: bold; font-size: 14px;">Observações:</p><p style="margin:5px 0 0 0; font-size: 14px;">${report.notes}</p></div>` : ''}
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>SKU</th>
-                                <th>Descrição</th>
-                                <th>Quantidade</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${[...report.items].sort((a, b) => a.sku.localeCompare(b.sku, undefined, { numeric: true, sensitivity: 'base' })).map(item => `
-                                <tr>
-                                    <td><strong>${item.sku}</strong></td>
-                                    <td>${item.description}</td>
-                                    <td>${item.currentCount}</td>
-                                </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
-                    <script>window.print();</script>
-                </body>
-            </html>
-        `;
-
-        printWindow.document.write(html);
-        printWindow.document.close();
+        printWebReport(report, sequentialId);
     };
 
     const handleToggleSelectReport = (reportId: string) => {
@@ -443,172 +307,180 @@ const Entregas = () => {
             </div>
 
             <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-xl">
-                <div className="hidden md:block overflow-x-auto">
-                    <table className="w-full text-left">
-                        <thead>
-                            <tr className="bg-slate-200/50 dark:bg-slate-700/50 text-slate-500 dark:text-slate-400 text-sm">
-                                <th className="px-6 py-4 font-semibold w-12">
-                                    <div className="w-4 h-4" /> {/* Spacer for alignment */}
-                                </th>
-                                <th className="px-6 py-4 font-semibold">ID</th>
-                                <th className="px-6 py-4 font-semibold">Título</th>
-                                <th className="px-6 py-4 font-semibold">Criação</th>
-                                <th className="px-6 py-4 font-semibold text-center">Itens</th>
-                                <th className="px-6 py-4 font-semibold text-right">Ações</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+                {loading ? (
+                    <div className="p-4 md:p-6">
+                        <ReportSkeleton />
+                    </div>
+                ) : (
+                    <>
+                        <div className="hidden md:block overflow-x-auto">
+                            <table className="w-full text-left">
+                                <thead>
+                                    <tr className="bg-slate-200/50 dark:bg-slate-700/50 text-slate-500 dark:text-slate-400 text-sm">
+                                        <th className="px-6 py-4 font-semibold w-12">
+                                            <div className="w-4 h-4" /> {/* Spacer for alignment */}
+                                        </th>
+                                        <th className="px-6 py-4 font-semibold">ID</th>
+                                        <th className="px-6 py-4 font-semibold">Título</th>
+                                        <th className="px-6 py-4 font-semibold">Criação</th>
+                                        <th className="px-6 py-4 font-semibold text-center">Itens</th>
+                                        <th className="px-6 py-4 font-semibold text-right">Ações</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
+                                    {reports.map((report, index) => {
+                                        const sequentialId = reports.length - index;
+                                        const isSelected = selectedReports.includes(report.id);
+                                        return (
+                                            <tr key={report.id} className={`transition-colors ${isSelected ? 'bg-indigo-50/50 dark:bg-indigo-900/20' : 'hover:bg-slate-100/30 dark:bg-slate-800/30'}`}>
+                                                <td className="px-6 py-4">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={isSelected}
+                                                        onChange={() => handleToggleSelectReport(report.id)}
+                                                        className="w-4 h-4 text-purple-600 rounded border-slate-300 dark:border-slate-700 focus:ring-purple-500 dark:bg-slate-800 cursor-pointer"
+                                                    />
+                                                </td>
+                                                <td className="px-6 py-4 font-mono text-purple-400">
+                                                    #{sequentialId}
+                                                </td>
+                                                <td className="px-6 py-4 font-bold text-slate-900 dark:text-white">
+                                                    {report.title || <span className="text-slate-400 font-normal">Entrega #{sequentialId}</span>}
+                                                </td>
+                                                <td className="px-6 py-4 text-slate-700 dark:text-slate-300">
+                                                    {report.createdAt?.toDate ? (
+                                                        <div className="flex flex-col">
+                                                            <span>{report.createdAt.toDate().toLocaleDateString('pt-BR')}</span>
+                                                            <span className="text-xs text-slate-500 font-normal mt-0.5">{report.createdAt.toDate().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
+                                                        </div>
+                                                    ) : 'Processando...'}
+                                                </td>
+                                                <td className="px-6 py-4 text-center">
+                                                    <span className="bg-purple-500/10 text-purple-400 px-3 py-1 rounded-full text-xs font-bold">
+                                                        {report.totalItems} itens
+                                                    </span>
+                                                </td>
+                                                <td className="px-6 py-4 text-right">
+                                                    <div className="flex justify-end gap-2 text-nowrap">
+                                                        {report.notes && (
+                                                            <div className="p-2 text-blue-400" title={report.notes}>
+                                                                <Eye size={18} />
+                                                            </div>
+                                                        )}
+                                                        <button
+                                                            onClick={() => {
+                                                                setCurrentReport(report);
+                                                                setReportItems(report.items);
+                                                                setNotes(report.notes || '');
+                                                                setIsModalOpen(true);
+                                                            }}
+                                                            className="p-2 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-white hover:bg-slate-200 dark:bg-slate-700 rounded-lg transition-all"
+                                                            title="Editar"
+                                                        >
+                                                            <Edit2 size={18} />
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handlePrintReport(report, sequentialId)}
+                                                            className="p-2 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-white hover:bg-slate-200 dark:bg-slate-700 rounded-lg transition-all"
+                                                            title="Imprimir"
+                                                        >
+                                                            <Printer size={18} />
+                                                        </button>
+                                                        <button
+                                                            onClick={() => deleteReport(report.id)}
+                                                            className="p-2 text-slate-500 dark:text-slate-400 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-all"
+                                                            title="Excluir"
+                                                        >
+                                                            <Trash2 size={18} />
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        {/* Mobile View (Cards) */}
+                        <div className="md:hidden divide-y divide-slate-200 dark:divide-slate-800">
                             {reports.map((report, index) => {
                                 const sequentialId = reports.length - index;
+                                const dateText = report.createdAt?.toDate ? report.createdAt.toDate().toLocaleString('pt-BR') : 'Processando...';
                                 const isSelected = selectedReports.includes(report.id);
                                 return (
-                                    <tr key={report.id} className={`transition-colors ${isSelected ? 'bg-indigo-50/50 dark:bg-indigo-900/20' : 'hover:bg-slate-100/30 dark:bg-slate-800/30'}`}>
-                                        <td className="px-6 py-4">
-                                            <input
-                                                type="checkbox"
-                                                checked={isSelected}
-                                                onChange={() => handleToggleSelectReport(report.id)}
-                                                className="w-4 h-4 text-purple-600 rounded border-slate-300 dark:border-slate-700 focus:ring-purple-500 dark:bg-slate-800 cursor-pointer"
-                                            />
-                                        </td>
-                                        <td className="px-6 py-4 font-mono text-purple-400">
-                                            #{sequentialId}
-                                        </td>
-                                        <td className="px-6 py-4 font-bold text-slate-900 dark:text-white">
-                                            {report.title || <span className="text-slate-400 font-normal">Entrega #{sequentialId}</span>}
-                                        </td>
-                                        <td className="px-6 py-4 text-slate-700 dark:text-slate-300">
-                                            {report.createdAt?.toDate ? (
-                                                <div className="flex flex-col">
-                                                    <span>{report.createdAt.toDate().toLocaleDateString('pt-BR')}</span>
-                                                    <span className="text-xs text-slate-500 font-normal mt-0.5">{report.createdAt.toDate().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
+                                    <div key={report.id} className={`p-4 space-y-4 transition-colors ${isSelected ? 'bg-indigo-50/50 dark:bg-indigo-900/20' : 'hover:bg-slate-100/20 dark:bg-slate-800/20'}`}>
+                                        <div className="flex justify-between items-center">
+                                            <div className="flex items-center gap-3">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={isSelected}
+                                                    onChange={() => handleToggleSelectReport(report.id)}
+                                                    className="w-5 h-5 text-purple-600 rounded border-slate-300 dark:border-slate-700 focus:ring-purple-500 dark:bg-slate-800 cursor-pointer"
+                                                />
+                                                <div className="space-y-1">
+                                                    <p className="font-mono text-purple-400 font-bold">#{sequentialId}</p>
+                                                    <p className="text-slate-500 text-[10px]">{dateText}</p>
                                                 </div>
-                                            ) : 'Processando...'}
-                                        </td>
-                                        <td className="px-6 py-4 text-center">
-                                            <span className="bg-purple-500/10 text-purple-400 px-3 py-1 rounded-full text-xs font-bold">
-                                                {report.totalItems} itens
-                                            </span>
-                                        </td>
-                                        <td className="px-6 py-4 text-right">
-                                            <div className="flex justify-end gap-2 text-nowrap">
+                                            </div>
+                                            <div className="flex items-center gap-2">
                                                 {report.notes && (
-                                                    <div className="p-2 text-blue-400" title={report.notes}>
-                                                        <Eye size={18} />
-                                                    </div>
+                                                    <span title={report.notes}>
+                                                        <Eye size={14} className="text-blue-400" />
+                                                    </span>
                                                 )}
+                                                <span className="bg-purple-500/10 text-purple-400 px-2 py-1 rounded-full text-[10px] font-bold">
+                                                    {report.totalItems} ITENS
+                                                </span>
+                                            </div>
+                                        </div>
+
+                                        <div className="flex items-center justify-between pt-2 border-t border-slate-200/50 dark:border-slate-800/50">
+                                            <div className="flex gap-2">
                                                 <button
                                                     onClick={() => {
                                                         setCurrentReport(report);
                                                         setReportItems(report.items);
                                                         setNotes(report.notes || '');
+                                                        setTitle(report.title || '');
                                                         setIsModalOpen(true);
                                                     }}
-                                                    className="p-2 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-white hover:bg-slate-200 dark:bg-slate-700 rounded-lg transition-all"
-                                                    title="Editar"
+                                                    className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg text-xs font-bold border border-slate-300 dark:border-slate-700"
                                                 >
-                                                    <Edit2 size={18} />
+                                                    <Edit2 size={14} />
+                                                    Editar
                                                 </button>
                                                 <button
                                                     onClick={() => handlePrintReport(report, sequentialId)}
-                                                    className="p-2 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-white hover:bg-slate-200 dark:bg-slate-700 rounded-lg transition-all"
-                                                    title="Imprimir"
+                                                    className="px-3 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg border border-slate-300 dark:border-slate-700"
                                                 >
-                                                    <Printer size={18} />
+                                                    <Printer size={14} />
                                                 </button>
                                                 <button
                                                     onClick={() => deleteReport(report.id)}
-                                                    className="p-2 text-slate-500 dark:text-slate-400 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-all"
-                                                    title="Excluir"
+                                                    className="px-3 py-2 bg-slate-100 dark:bg-slate-800 text-red-400 rounded-lg border border-slate-300 dark:border-slate-700"
                                                 >
-                                                    <Trash2 size={18} />
+                                                    <Trash2 size={14} />
                                                 </button>
                                             </div>
-                                        </td>
-                                    </tr>
-                                );
-                            })}
-                        </tbody>
-                    </table>
-                </div>
-
-                {/* Mobile View (Cards) */}
-                <div className="md:hidden divide-y divide-slate-200 dark:divide-slate-800">
-                    {reports.map((report, index) => {
-                        const sequentialId = reports.length - index;
-                        const dateText = report.createdAt?.toDate ? report.createdAt.toDate().toLocaleString('pt-BR') : 'Processando...';
-                        const isSelected = selectedReports.includes(report.id);
-                        return (
-                            <div key={report.id} className={`p-4 space-y-4 transition-colors ${isSelected ? 'bg-indigo-50/50 dark:bg-indigo-900/20' : 'hover:bg-slate-100/20 dark:bg-slate-800/20'}`}>
-                                <div className="flex justify-between items-center">
-                                    <div className="flex items-center gap-3">
-                                        <input
-                                            type="checkbox"
-                                            checked={isSelected}
-                                            onChange={() => handleToggleSelectReport(report.id)}
-                                            className="w-5 h-5 text-purple-600 rounded border-slate-300 dark:border-slate-700 focus:ring-purple-500 dark:bg-slate-800 cursor-pointer"
-                                        />
-                                        <div className="space-y-1">
-                                            <p className="font-mono text-purple-400 font-bold">#{sequentialId}</p>
-                                            <p className="text-slate-500 text-[10px]">{dateText}</p>
+                                            <button
+                                                onClick={() => handleShare(report)}
+                                                className="p-2.5 bg-blue-600/10 text-blue-400 rounded-lg border border-blue-500/20"
+                                            >
+                                                <Share2 size={18} />
+                                            </button>
                                         </div>
                                     </div>
-                                    <div className="flex items-center gap-2">
-                                        {report.notes && (
-                                            <span title={report.notes}>
-                                                <Eye size={14} className="text-blue-400" />
-                                            </span>
-                                        )}
-                                        <span className="bg-purple-500/10 text-purple-400 px-2 py-1 rounded-full text-[10px] font-bold">
-                                            {report.totalItems} ITENS
-                                        </span>
-                                    </div>
+                                );
+                            })}
+                            {reports.length === 0 && (
+                                <div className="p-12 text-center text-slate-500 italic text-sm">
+                                    Nenhum relatório cadastrado.
                                 </div>
-
-                                <div className="flex items-center justify-between pt-2 border-t border-slate-200/50 dark:border-slate-800/50">
-                                    <div className="flex gap-2">
-                                        <button
-                                            onClick={() => {
-                                                setCurrentReport(report);
-                                                setReportItems(report.items);
-                                                setNotes(report.notes || '');
-                                                setTitle(report.title || '');
-                                                setIsModalOpen(true);
-                                            }}
-                                            className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg text-xs font-bold border border-slate-300 dark:border-slate-700"
-                                        >
-                                            <Edit2 size={14} />
-                                            Editar
-                                        </button>
-                                        <button
-                                            onClick={() => handlePrintReport(report, sequentialId)}
-                                            className="px-3 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg border border-slate-300 dark:border-slate-700"
-                                        >
-                                            <Printer size={14} />
-                                        </button>
-                                        <button
-                                            onClick={() => deleteReport(report.id)}
-                                            className="px-3 py-2 bg-slate-100 dark:bg-slate-800 text-red-400 rounded-lg border border-slate-300 dark:border-slate-700"
-                                        >
-                                            <Trash2 size={14} />
-                                        </button>
-                                    </div>
-                                    <button
-                                        onClick={() => handleShare(report)}
-                                        className="p-2.5 bg-blue-600/10 text-blue-400 rounded-lg border border-blue-500/20"
-                                    >
-                                        <Share2 size={18} />
-                                    </button>
-                                </div>
-                            </div>
-                        );
-                    })}
-                    {reports.length === 0 && (
-                        <div className="p-12 text-center text-slate-500 italic text-sm">
-                            Nenhum relatório cadastrado.
+                            )}
                         </div>
-                    )}
-                </div>
+                    </>
+                )}
             </div>
 
             {isModalOpen && (
@@ -643,20 +515,34 @@ const Entregas = () => {
                                             readOnly={!!selectedProduct}
                                             placeholder="Inserir SKU"
                                         />
-                                        {(selectedProduct || searchTerm) && (
+                                        <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                                            {(selectedProduct || searchTerm) && (
+                                                <button
+                                                    onClick={() => {
+                                                        setSelectedProduct(null);
+                                                        setSearchTerm('');
+                                                        setProducts([]);
+                                                        skuInputRef.current?.focus();
+                                                    }}
+                                                    className="text-slate-500 hover:text-slate-900 dark:text-white p-1"
+                                                >
+                                                    <X size={18} />
+                                                </button>
+                                            )}
                                             <button
-                                                onClick={() => {
-                                                    setSelectedProduct(null);
-                                                    setSearchTerm('');
-                                                    setProducts([]);
-                                                    skuInputRef.current?.focus();
-                                                }}
-                                                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-900 dark:text-white"
+                                                onClick={isScanning ? () => setIsScanning(false) : startScanner}
+                                                className="text-slate-500 hover:text-purple-500 dark:hover:text-purple-400 p-1 bg-white dark:bg-slate-800 rounded-lg shadow-sm ml-1"
                                             >
-                                                <X size={18} />
+                                                {isScanning ? <StopCircle size={20} /> : <ScanBarcode size={20} />}
                                             </button>
-                                        )}
+                                        </div>
                                     </div>
+
+                                    <ScannerModal
+                                        isOpen={isScanning}
+                                        onClose={() => setIsScanning(false)}
+                                        onScan={handleScan}
+                                    />
 
                                     {products.length > 0 && !selectedProduct && (
                                         <div className="absolute z-10 w-full mt-1 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg shadow-xl max-h-48 overflow-y-auto border-t-0 rounded-t-none">
