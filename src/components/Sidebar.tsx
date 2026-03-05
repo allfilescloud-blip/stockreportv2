@@ -97,11 +97,6 @@ const Sidebar = () => {
                             <LogOut size={20} className={`shrink-0 ${isExpanded ? 'group-hover:translate-x-0.5' : ''} transition-transform`} />
                             <span className={`font-bold text-sm whitespace-nowrap ${!isExpanded ? 'lg:hidden' : ''}`}>Sair do Sistema</span>
                         </button>
-
-                        <div className={`mt-8 mb-4 lg:mb-2 text-center transition-opacity duration-300 ${!isExpanded ? 'opacity-0 lg:hidden' : 'opacity-100'}`}>
-                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Sobre o sistema</p>
-                            <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-tight">Idealizado e desenvolvido por<br /><span className="font-semibold text-slate-700 dark:text-slate-300">Fabio Xavier</span></p>
-                        </div>
                     </nav>
                 </div>
             </div>

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { UserPlus, ShieldCheck, UserCheck, Check, X, Loader2, Trash2, Mail, Users, Ban, LockKeyhole, Edit3 } from 'lucide-react';
+import { UserPlus, ShieldCheck, UserCheck, Check, X, Loader2, Trash2, Mail, Users, Ban, LockKeyhole, Edit3, Crown } from 'lucide-react';
 import { collection, query, where, onSnapshot, doc, updateDoc, deleteDoc, setDoc, getDoc } from 'firebase/firestore';
 import { sendPasswordResetEmail } from 'firebase/auth';
 import toast from 'react-hot-toast';
@@ -128,6 +128,25 @@ export const UserManagement = ({ initialAllowReg }: { initialAllowReg: boolean }
         } catch (error) {
             console.error('Erro ao atualizar status:', error);
             toast.error('Erro ao atualizar status do usuário.');
+        } finally {
+            setLoadingAction(null);
+        }
+    };
+
+    const handleToggleRole = async (user: ActiveUser) => {
+        if (user.id === auth.currentUser?.uid) {
+            toast.error('Você não pode alterar seu próprio nível de acesso.');
+            return;
+        }
+
+        const newRole = user.role === 'admin' ? 'user' : 'admin';
+        setLoadingAction(user.id + '-role');
+        try {
+            await updateDoc(doc(db, 'users', user.id), { role: newRole });
+            toast.success(`Usuário agora é ${newRole === 'admin' ? 'Administrador' : 'Padrão'}.`);
+        } catch (error) {
+            console.error('Erro ao atualizar papel:', error);
+            toast.error('Erro ao alterar nível de acesso.');
         } finally {
             setLoadingAction(null);
         }
@@ -276,6 +295,19 @@ export const UserManagement = ({ initialAllowReg }: { initialAllowReg: boolean }
                                 </div>
 
                                 <div className="flex items-center gap-2 flex-wrap">
+                                    {/* Toggle Role (Admin/User) */}
+                                    <button
+                                        onClick={() => handleToggleRole(u)}
+                                        disabled={loadingAction === u.id + '-role'}
+                                        className={`p-2 rounded-xl transition-all border disabled:opacity-50 ${u.role === 'admin'
+                                            ? 'bg-amber-500/10 hover:bg-amber-500 text-amber-600 dark:text-amber-400 hover:text-white border-amber-500/20'
+                                            : 'bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white border-slate-200 dark:border-slate-700'
+                                            }`}
+                                        title={u.role === 'admin' ? 'Remover privilégios de Administrador' : 'Tornar Administrador'}
+                                    >
+                                        {loadingAction === u.id + '-role' ? <Loader2 size={18} className="animate-spin" /> : <Crown size={18} />}
+                                    </button>
+
                                     {/* Edit Permissions */}
                                     <button
                                         onClick={() => openPermissionsModal(u)}
