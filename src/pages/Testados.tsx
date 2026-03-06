@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import {
     collection,
     addDoc,
@@ -9,7 +9,8 @@ import {
     arrayUnion,
     serverTimestamp,
     deleteDoc,
-    getDocs
+    getDocs,
+    getDoc
 } from 'firebase/firestore';
 import { db } from '../db/firebase';
 import { Plus, Search, X, ClipboardList, Printer, Trash2, Edit2, AlertTriangle, Share2, Calculator, ScanBarcode, StopCircle } from 'lucide-react';
@@ -17,6 +18,7 @@ import { shareReport, printWebReport } from '../utils/reportUtils';
 import { ScannerModal } from '../components/ScannerModal';
 import { useProducts } from '../contexts/ProductsContext';
 import { useReports } from '../hooks/useReports';
+import { useAuth } from '../hooks/useAuth';
 import { ReportSkeleton } from '../components/ReportSkeleton';
 
 interface ReportItem {
@@ -36,6 +38,7 @@ interface Report {
     items: ReportItem[];
     userName?: string;
     title?: string;
+    sequentialId?: number;
 }
 
 const Testados = () => {
@@ -60,6 +63,20 @@ const Testados = () => {
     const [isScanning, setIsScanning] = useState(false);
 
     const { reports, loading } = useReports<Report>('tested', filterDate);
+    const { user } = useAuth();
+    const [disableDecimals, setDisableDecimals] = useState(false);
+
+    useEffect(() => {
+        if (user) {
+            const loadOptions = async () => {
+                const optionsDoc = await getDoc(doc(db, 'users', user.uid, 'settings', 'general'));
+                if (optionsDoc.exists()) {
+                    setDisableDecimals(optionsDoc.data().disableDecimals || false);
+                }
+            };
+            loadOptions();
+        }
+    }, [user]);
 
     const skuInputRef = useRef<HTMLInputElement>(null);
     const quantityInputRef = useRef<HTMLInputElement>(null);
@@ -173,11 +190,16 @@ const Testados = () => {
                 updatedAt: serverTimestamp()
             });
         } else {
+            const nextSequentialId = reports.length > 0
+                ? Math.max(reports.length, ...reports.map(r => r.sequentialId || 0)) + 1
+                : 1;
+
             const newDoc = await addDoc(collection(db, 'reports'), {
                 type: 'tested',
                 title: title.trim(),
                 items: reportItems,
                 totalItems: reportItems.length,
+                sequentialId: nextSequentialId,
                 createdAt: serverTimestamp(),
                 updatedAt: serverTimestamp()
             });
@@ -220,13 +242,12 @@ const Testados = () => {
         }
     };
 
-    const handleShare = async (report: Report) => {
-        const sequentialId = reports.length - reports.findIndex(r => r.id === report.id);
-        await shareReport(report, sequentialId);
+    const handleShare = async (report: Report, printId: number) => {
+        await shareReport(report, printId);
     };
 
-    const handlePrintReport = (report: Report, sequentialId: number) => {
-        printWebReport(report, sequentialId);
+    const handlePrintReport = (report: Report, printId: number) => {
+        printWebReport(report, printId);
     };
 
     return (
@@ -285,12 +306,12 @@ const Testados = () => {
                                 </thead>
                                 <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
                                     {reports.map((report, index) => {
-                                        const sequentialId = reports.length - index;
+                                        const displayId = report.sequentialId || (reports.length - index);
                                         return (
                                             <tr key={report.id} className="hover:bg-slate-100/30 dark:bg-slate-800/30 transition-colors">
-                                                <td className="px-6 py-4 font-mono text-blue-400">#{sequentialId}</td>
+                                                <td className="px-6 py-4 font-mono text-blue-400">#{displayId}</td>
                                                 <td className="px-6 py-4 font-bold text-slate-900 dark:text-white">
-                                                    {report.title || <span className="text-slate-400 font-normal">Testados #{sequentialId}</span>}
+                                                    {report.title || <span className="text-slate-400 font-normal">Testados #{displayId}</span>}
                                                 </td>
                                                 <td className="px-6 py-4 text-slate-700 dark:text-slate-300">
                                                     {report.createdAt?.toDate ? (
@@ -328,7 +349,7 @@ const Testados = () => {
                                                             <Edit2 size={18} />
                                                         </button>
                                                         <button
-                                                            onClick={() => handlePrintReport(report, sequentialId)}
+                                                            onClick={() => handlePrintReport(report, displayId)}
                                                             className="p-2 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-white hover:bg-slate-200 dark:bg-slate-700 rounded-lg transition-all"
                                                             title="Imprimir"
                                                         >
@@ -353,13 +374,18 @@ const Testados = () => {
                         {/* Mobile View (Cards) */}
                         <div className="md:hidden divide-y divide-slate-200 dark:divide-slate-800">
                             {reports.map((report, index) => {
-                                const sequentialId = reports.length - index;
+                                const displayId = report.sequentialId || (reports.length - index);
                                 const dateText = report.createdAt?.toDate ? report.createdAt.toDate().toLocaleString('pt-BR') : 'Processando...';
                                 return (
                                     <div key={report.id} className="p-4 space-y-4 hover:bg-slate-100/20 dark:bg-slate-800/20 transition-colors">
                                         <div className="flex justify-between items-center">
                                             <div className="space-y-1">
-                                                <p className="font-mono text-blue-400 font-bold">#{sequentialId}</p>
+                                                <div className="flex items-center gap-2 max-w-[200px] sm:max-w-[250px]">
+                                                    <p className="font-mono text-blue-400 font-bold shrink-0">#{displayId}</p>
+                                                    <span className="text-slate-900 dark:text-white font-semibold text-sm truncate">
+                                                        {report.title || `Testados #${displayId}`}
+                                                    </span>
+                                                </div>
                                                 <p className="text-slate-500 text-[10px]">{dateText}</p>
                                             </div>
                                             <span className="bg-blue-500/10 text-blue-400 px-2 py-1 rounded-full text-[10px] font-bold">
@@ -382,7 +408,7 @@ const Testados = () => {
                                                     Editar
                                                 </button>
                                                 <button
-                                                    onClick={() => handlePrintReport(report, sequentialId)}
+                                                    onClick={() => handlePrintReport(report, displayId)}
                                                     className="px-3 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg border border-slate-300 dark:border-slate-700"
                                                 >
                                                     <Printer size={14} />
@@ -395,7 +421,7 @@ const Testados = () => {
                                                 </button>
                                             </div>
                                             <button
-                                                onClick={() => handleShare(report)}
+                                                onClick={() => handleShare(report, displayId)}
                                                 className="p-2.5 bg-blue-600/10 text-blue-400 rounded-lg border border-blue-500/20"
                                             >
                                                 <Share2 size={18} />
@@ -504,6 +530,11 @@ const Testados = () => {
                                             placeholder="0"
                                             className="w-full px-4 py-3 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none no-spinner"
                                             value={quantity}
+                                            onKeyDown={(e) => {
+                                                if (disableDecimals && (e.key === '.' || e.key === ',')) {
+                                                    e.preventDefault();
+                                                }
+                                            }}
                                             onChange={(e) => setQuantity(e.target.value === '' ? '' : Number(e.target.value))}
                                         />
                                         <button onClick={addItemToReport} disabled={!selectedProduct || quantity === ''} className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white p-3 rounded-lg transition-all shadow-lg active:scale-95">
@@ -709,8 +740,13 @@ const Testados = () => {
                                 placeholder="Valor a somar (ex: 10)"
                                 className="w-full px-4 py-3 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white mb-6 focus:ring-2 focus:ring-emerald-500 outline-none no-spinner"
                                 value={sumValue}
+                                onKeyDown={(e) => {
+                                    if (disableDecimals && (e.key === '.' || e.key === ',')) {
+                                        e.preventDefault();
+                                    }
+                                    if (e.key === 'Enter') handleSum();
+                                }}
                                 onChange={(e) => setSumValue(e.target.value === '' ? '' : Number(e.target.value))}
-                                onKeyDown={(e) => e.key === 'Enter' && handleSum()}
                             />
                             <div className="flex gap-3">
                                 <button

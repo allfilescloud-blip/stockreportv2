@@ -9,6 +9,7 @@ import {
     arrayUnion,
     serverTimestamp,
     deleteDoc,
+    getDoc,
 } from 'firebase/firestore';
 import { db } from '../db/firebase';
 import { Search, Plus, Printer, Trash2, Edit2, X, AlertTriangle, Share2, ClipboardList, Calculator, ScanBarcode, StopCircle, Layers, MapPin } from 'lucide-react';
@@ -17,6 +18,7 @@ import { ScannerModal } from '../components/ScannerModal';
 import toast from 'react-hot-toast';
 import { useProducts } from '../contexts/ProductsContext';
 import { useReports } from '../hooks/useReports';
+import { useAuth } from '../hooks/useAuth';
 import { ReportSkeleton } from '../components/ReportSkeleton';
 
 interface ReportItem {
@@ -44,6 +46,7 @@ interface Report {
     title?: string;
     locationId?: string;
     locationName?: string;
+    sequentialId?: number;
 }
 
 const Inventario = () => {
@@ -74,6 +77,20 @@ const Inventario = () => {
     const [isScanning, setIsScanning] = useState(false);
 
     const { reports, loading } = useReports<Report>('inventory', filterDate, filterLocation);
+    const { user } = useAuth();
+    const [disableDecimals, setDisableDecimals] = useState(false);
+
+    useEffect(() => {
+        if (user) {
+            const loadOptions = async () => {
+                const optionsDoc = await getDoc(doc(db, 'users', user.uid, 'settings', 'general'));
+                if (optionsDoc.exists()) {
+                    setDisableDecimals(optionsDoc.data().disableDecimals || false);
+                }
+            };
+            loadOptions();
+        }
+    }, [user]);
 
     const skuInputRef = useRef<HTMLInputElement>(null);
     const quantityInputRef = useRef<HTMLInputElement>(null);
@@ -245,27 +262,44 @@ const Inventario = () => {
     const executeFinalSave = async (itemsToSave: ReportItem[]) => {
         if (itemsToSave.length === 0) return;
 
+        // Validação: obrigatório selecionar o local ao salvar inventários unificados
+        if (currentReport?.id.startsWith('unified-') && !selectedLocationId) {
+            toast.error("A seleção de um local é obrigatória para salvar relatórios unificados.");
+            return;
+        }
+
         let reportRef;
         const locationObj = locations.find(l => l.id === selectedLocationId);
 
-        if (currentReport) {
+        let finalLocationName = locationObj?.name || '';
+        if (currentReport?.id.startsWith('unified-') && currentReport.locationName) {
+            finalLocationName = finalLocationName ? `${finalLocationName} (${currentReport.locationName})` : currentReport.locationName;
+        }
+
+        if (currentReport && !currentReport.id.startsWith('unified-')) {
             reportRef = doc(db, 'reports', currentReport.id);
             await updateDoc(reportRef, {
                 title: title.trim(),
                 items: itemsToSave,
                 totalItems: itemsToSave.length,
                 locationId: selectedLocationId,
-                locationName: locationObj?.name || '',
+                locationName: finalLocationName,
                 updatedAt: serverTimestamp()
             });
         } else {
+            // Calcular o próximo ID sequencial baseado nos relatórios existentes
+            const nextSequentialId = reports.length > 0
+                ? Math.max(reports.length, ...reports.map(r => r.sequentialId || 0)) + 1
+                : 1;
+
             const newDoc = await addDoc(collection(db, 'reports'), {
                 type: 'inventory',
                 title: title.trim(),
                 items: itemsToSave,
                 totalItems: itemsToSave.length,
                 locationId: selectedLocationId,
-                locationName: locationObj?.name || '',
+                locationName: finalLocationName,
+                sequentialId: nextSequentialId,
                 createdAt: serverTimestamp(),
                 updatedAt: serverTimestamp()
             });
@@ -348,21 +382,35 @@ const Inventario = () => {
 
         const mergedItems = Array.from(mergedItemsMap.values());
 
+        // Coletar locais únicos dos relatórios mesclados
+        const uniqueLocations = Array.from(new Set(reportsToMerge.map(r => r.locationName).filter(Boolean)));
+
         setReportItems(mergedItems);
         setTitle(`Inventários Unificados (${selectedReports.length})`);
-        setSelectedLocationId('');
-        setCurrentReport(null);
+        setSelectedLocationId(''); // O usuário pode então selecionar um novo local ou deixar em branco
+
+        // Passar os locais originais para o "locationName" temporariamente para sabermos durante a impressão ou salvamento
+        setCurrentReport({
+            id: 'unified-' + Date.now().toString(),
+            type: 'inventory',
+            title: `Inventários Unificados (${selectedReports.length})`,
+            totalItems: mergedItems.length,
+            items: mergedItems,
+            createdAt: null as any,
+            updatedAt: null as any,
+            locationName: uniqueLocations.join(', ')
+        });
+
         setIsModalOpen(true);
         setSelectedReports([]);
     };
 
-    const handleShare = async (report: Report) => {
-        const sequentialId = reports.length - reports.findIndex(r => r.id === report.id);
-        await shareReport(report, sequentialId);
+    const handleShare = async (report: Report, printId: number) => {
+        await shareReport(report, printId);
     };
 
-    const handlePrintReport = (report: Report, sequentialId: number) => {
-        printWebReport(report, sequentialId);
+    const handlePrintReport = (report: Report, printId: number) => {
+        printWebReport(report, printId);
     };
 
     return (
@@ -448,7 +496,7 @@ const Inventario = () => {
                                 </thead>
                                 <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
                                     {reports.map((report, index) => {
-                                        const sequentialId = reports.length - index;
+                                        const displayId = report.sequentialId || (reports.length - index);
                                         const isSelected = selectedReports.includes(report.id);
                                         return (
                                             <tr key={report.id} className={`transition-colors ${isSelected ? 'bg-indigo-50/50 dark:bg-indigo-900/20' : 'hover:bg-slate-100/30 dark:bg-slate-800/30'}`}>
@@ -460,10 +508,10 @@ const Inventario = () => {
                                                         className="w-4 h-4 text-emerald-600 rounded border-slate-300 dark:border-slate-700 focus:ring-emerald-500 dark:bg-slate-800 cursor-pointer"
                                                     />
                                                 </td>
-                                                <td className="px-6 py-4 font-mono text-emerald-400">#{sequentialId}</td>
+                                                <td className="px-6 py-4 font-mono text-emerald-400">#{displayId}</td>
                                                 <td className="px-6 py-4">
                                                     <div className="font-bold text-slate-900 dark:text-white">
-                                                        {report.title || <span className="text-slate-400 font-normal">Inventário #{sequentialId}</span>}
+                                                        {report.title || <span className="text-slate-400 font-normal">Inventário #{displayId}</span>}
                                                     </div>
                                                     {report.locationName && (
                                                         <div className="text-xs text-slate-500 mt-1 flex items-center gap-1">
@@ -509,7 +557,7 @@ const Inventario = () => {
                                                             <Edit2 size={18} />
                                                         </button>
                                                         <button
-                                                            onClick={() => handlePrintReport(report, sequentialId)}
+                                                            onClick={() => handlePrintReport(report, displayId)}
                                                             className="p-2 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-white hover:bg-slate-200 dark:bg-slate-700 rounded-lg transition-all"
                                                             title="Imprimir"
                                                         >
@@ -534,7 +582,7 @@ const Inventario = () => {
                         {/* Mobile View (Cards) */}
                         <div className="md:hidden divide-y divide-slate-200 dark:divide-slate-800">
                             {reports.map((report, index) => {
-                                const sequentialId = reports.length - index;
+                                const displayId = report.sequentialId || (reports.length - index);
                                 const dateText = report.createdAt?.toDate ? report.createdAt.toDate().toLocaleString('pt-BR') : 'Processando...';
                                 const isSelected = selectedReports.includes(report.id);
                                 return (
@@ -548,7 +596,12 @@ const Inventario = () => {
                                                     className="w-5 h-5 text-emerald-600 rounded border-slate-300 dark:border-slate-700 focus:ring-emerald-500 dark:bg-slate-800 cursor-pointer"
                                                 />
                                                 <div className="space-y-1">
-                                                    <p className="font-mono text-emerald-400 font-bold">#{sequentialId}</p>
+                                                    <div className="flex items-center gap-2 max-w-[200px] sm:max-w-[250px]">
+                                                        <p className="font-mono text-emerald-400 font-bold shrink-0">#{displayId}</p>
+                                                        <span className="text-slate-900 dark:text-white font-semibold text-sm truncate">
+                                                            {report.title || `Inventário #${displayId}`}
+                                                        </span>
+                                                    </div>
                                                     <div className="flex items-center gap-2">
                                                         <p className="text-slate-500 text-[10px]">{dateText}</p>
                                                         {report.locationName && (
@@ -580,7 +633,7 @@ const Inventario = () => {
                                                     Editar
                                                 </button>
                                                 <button
-                                                    onClick={() => handlePrintReport(report, sequentialId)}
+                                                    onClick={() => handlePrintReport(report, displayId)}
                                                     className="px-3 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg border border-slate-300 dark:border-slate-700"
                                                 >
                                                     <Printer size={14} />
@@ -593,7 +646,7 @@ const Inventario = () => {
                                                 </button>
                                             </div>
                                             <button
-                                                onClick={() => handleShare(report)}
+                                                onClick={() => handleShare(report, displayId)}
                                                 className="p-2.5 bg-blue-600/10 text-blue-400 rounded-lg border border-blue-500/20"
                                             >
                                                 <Share2 size={18} />
@@ -715,6 +768,11 @@ const Inventario = () => {
                                             placeholder="0"
                                             className="w-full px-4 py-3 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 outline-none no-spinner"
                                             value={quantity}
+                                            onKeyDown={(e) => {
+                                                if (disableDecimals && (e.key === '.' || e.key === ',')) {
+                                                    e.preventDefault();
+                                                }
+                                            }}
                                             onChange={(e) => setQuantity(e.target.value === '' ? '' : Number(e.target.value))}
                                         />
                                         <button
@@ -991,8 +1049,13 @@ const Inventario = () => {
                                 placeholder="Valor a somar (ex: 10)"
                                 className="w-full px-4 py-3 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white mb-6 focus:ring-2 focus:ring-emerald-500 outline-none no-spinner"
                                 value={sumValue}
+                                onKeyDown={(e) => {
+                                    if (disableDecimals && (e.key === '.' || e.key === ',')) {
+                                        e.preventDefault();
+                                    }
+                                    if (e.key === 'Enter') handleSum();
+                                }}
                                 onChange={(e) => setSumValue(e.target.value === '' ? '' : Number(e.target.value))}
-                                onKeyDown={(e) => e.key === 'Enter' && handleSum()}
                             />
                             <div className="flex gap-3">
                                 <button

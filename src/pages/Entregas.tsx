@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import {
     collection,
     addDoc,
@@ -7,6 +7,7 @@ import {
     arrayUnion,
     serverTimestamp,
     deleteDoc,
+    getDoc,
 } from 'firebase/firestore';
 import { db } from '../db/firebase';
 import { Search, Plus, Printer, Trash2, Edit2, X, AlertTriangle, Share2, ClipboardList, Eye, Calculator, Layers, ScanBarcode, StopCircle } from 'lucide-react';
@@ -14,6 +15,7 @@ import { shareReport, printWebReport } from '../utils/reportUtils';
 import { ScannerModal } from '../components/ScannerModal';
 import { useProducts } from '../contexts/ProductsContext';
 import { useReports } from '../hooks/useReports';
+import { useAuth } from '../hooks/useAuth';
 import { ReportSkeleton } from '../components/ReportSkeleton';
 
 interface ReportItem {
@@ -33,6 +35,7 @@ interface Report {
     userName?: string;
     notes?: string;
     title?: string;
+    sequentialId?: number;
 }
 
 const Entregas = () => {
@@ -59,6 +62,20 @@ const Entregas = () => {
     const [isScanning, setIsScanning] = useState(false);
 
     const { reports, loading } = useReports<Report>('delivery', filterDate);
+    const { user } = useAuth();
+    const [disableDecimals, setDisableDecimals] = useState(false);
+
+    useEffect(() => {
+        if (user) {
+            const loadOptions = async () => {
+                const optionsDoc = await getDoc(doc(db, 'users', user.uid, 'settings', 'general'));
+                if (optionsDoc.exists()) {
+                    setDisableDecimals(optionsDoc.data().disableDecimals || false);
+                }
+            };
+            loadOptions();
+        }
+    }, [user]);
 
     const skuInputRef = useRef<HTMLInputElement>(null);
     const quantityInputRef = useRef<HTMLInputElement>(null);
@@ -158,12 +175,17 @@ const Entregas = () => {
                 updatedAt: serverTimestamp()
             });
         } else {
+            const nextSequentialId = reports.length > 0
+                ? Math.max(reports.length, ...reports.map(r => r.sequentialId || 0)) + 1
+                : 1;
+
             const newDoc = await addDoc(collection(db, 'reports'), {
                 type: 'delivery',
                 title: title.trim(),
                 items: reportItems,
                 totalItems: reportItems.length,
                 notes: notes,
+                sequentialId: nextSequentialId,
                 createdAt: serverTimestamp(),
                 updatedAt: serverTimestamp()
             });
@@ -207,13 +229,12 @@ const Entregas = () => {
         }
     };
 
-    const handleShare = async (report: Report) => {
-        const sequentialId = reports.length - reports.findIndex(r => r.id === report.id);
-        await shareReport(report, sequentialId);
+    const handleShare = async (report: Report, printId: number) => {
+        await shareReport(report, printId);
     };
 
-    const handlePrintReport = (report: Report, sequentialId: number) => {
-        printWebReport(report, sequentialId);
+    const handlePrintReport = (report: Report, printId: number) => {
+        printWebReport(report, printId);
     };
 
     const handleToggleSelectReport = (reportId: string) => {
@@ -329,7 +350,7 @@ const Entregas = () => {
                                 </thead>
                                 <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
                                     {reports.map((report, index) => {
-                                        const sequentialId = reports.length - index;
+                                        const displayId = report.sequentialId || (reports.length - index);
                                         const isSelected = selectedReports.includes(report.id);
                                         return (
                                             <tr key={report.id} className={`transition-colors ${isSelected ? 'bg-indigo-50/50 dark:bg-indigo-900/20' : 'hover:bg-slate-100/30 dark:bg-slate-800/30'}`}>
@@ -342,10 +363,10 @@ const Entregas = () => {
                                                     />
                                                 </td>
                                                 <td className="px-6 py-4 font-mono text-purple-400">
-                                                    #{sequentialId}
+                                                    #{displayId}
                                                 </td>
                                                 <td className="px-6 py-4 font-bold text-slate-900 dark:text-white">
-                                                    {report.title || <span className="text-slate-400 font-normal">Entrega #{sequentialId}</span>}
+                                                    {report.title || <span className="text-slate-400 font-normal">Entrega #{displayId}</span>}
                                                 </td>
                                                 <td className="px-6 py-4 text-slate-700 dark:text-slate-300">
                                                     {report.createdAt?.toDate ? (
@@ -380,7 +401,7 @@ const Entregas = () => {
                                                             <Edit2 size={18} />
                                                         </button>
                                                         <button
-                                                            onClick={() => handlePrintReport(report, sequentialId)}
+                                                            onClick={() => handlePrintReport(report, displayId)}
                                                             className="p-2 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-white hover:bg-slate-200 dark:bg-slate-700 rounded-lg transition-all"
                                                             title="Imprimir"
                                                         >
@@ -405,7 +426,7 @@ const Entregas = () => {
                         {/* Mobile View (Cards) */}
                         <div className="md:hidden divide-y divide-slate-200 dark:divide-slate-800">
                             {reports.map((report, index) => {
-                                const sequentialId = reports.length - index;
+                                const displayId = report.sequentialId || (reports.length - index);
                                 const dateText = report.createdAt?.toDate ? report.createdAt.toDate().toLocaleString('pt-BR') : 'Processando...';
                                 const isSelected = selectedReports.includes(report.id);
                                 return (
@@ -419,7 +440,12 @@ const Entregas = () => {
                                                     className="w-5 h-5 text-purple-600 rounded border-slate-300 dark:border-slate-700 focus:ring-purple-500 dark:bg-slate-800 cursor-pointer"
                                                 />
                                                 <div className="space-y-1">
-                                                    <p className="font-mono text-purple-400 font-bold">#{sequentialId}</p>
+                                                    <div className="flex items-center gap-2 max-w-[200px] sm:max-w-[250px]">
+                                                        <p className="font-mono text-purple-400 font-bold shrink-0">#{displayId}</p>
+                                                        <span className="text-slate-900 dark:text-white font-semibold text-sm truncate">
+                                                            {report.title || `Entrega #${displayId}`}
+                                                        </span>
+                                                    </div>
                                                     <p className="text-slate-500 text-[10px]">{dateText}</p>
                                                 </div>
                                             </div>
@@ -451,7 +477,7 @@ const Entregas = () => {
                                                     Editar
                                                 </button>
                                                 <button
-                                                    onClick={() => handlePrintReport(report, sequentialId)}
+                                                    onClick={() => handlePrintReport(report, displayId)}
                                                     className="px-3 py-2 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg border border-slate-300 dark:border-slate-700"
                                                 >
                                                     <Printer size={14} />
@@ -464,7 +490,7 @@ const Entregas = () => {
                                                 </button>
                                             </div>
                                             <button
-                                                onClick={() => handleShare(report)}
+                                                onClick={() => handleShare(report, displayId)}
                                                 className="p-2.5 bg-blue-600/10 text-blue-400 rounded-lg border border-blue-500/20"
                                             >
                                                 <Share2 size={18} />
@@ -573,6 +599,11 @@ const Entregas = () => {
                                             placeholder="0"
                                             className="w-full px-4 py-3 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white focus:ring-2 focus:ring-purple-500 outline-none no-spinner"
                                             value={quantity}
+                                            onKeyDown={(e) => {
+                                                if (disableDecimals && (e.key === '.' || e.key === ',')) {
+                                                    e.preventDefault();
+                                                }
+                                            }}
                                             onChange={(e) => setQuantity(e.target.value === '' ? '' : Number(e.target.value))}
                                         />
                                         <button onClick={addItemToReport} disabled={!selectedProduct || quantity === ''} className="bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white p-3 rounded-lg transition-all shadow-lg active:scale-95">
@@ -777,8 +808,13 @@ const Entregas = () => {
                                 placeholder="Valor a somar (ex: 10)"
                                 className="w-full px-4 py-3 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white mb-6 focus:ring-2 focus:ring-emerald-500 outline-none no-spinner"
                                 value={sumValue}
+                                onKeyDown={(e) => {
+                                    if (disableDecimals && (e.key === '.' || e.key === ',')) {
+                                        e.preventDefault();
+                                    }
+                                    if (e.key === 'Enter') handleSum();
+                                }}
                                 onChange={(e) => setSumValue(e.target.value === '' ? '' : Number(e.target.value))}
-                                onKeyDown={(e) => e.key === 'Enter' && handleSum()}
                             />
                             <div className="flex gap-3">
                                 <button

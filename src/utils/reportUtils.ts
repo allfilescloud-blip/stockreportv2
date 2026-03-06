@@ -22,6 +22,7 @@ export interface Report {
     locationId?: string;
     locationName?: string;
     notes?: string;
+    sequentialId?: number;
 }
 
 export const generatePdfBlob = (report: Report, sequentialId: number): Blob => {
@@ -36,21 +37,29 @@ export const generatePdfBlob = (report: Report, sequentialId: number): Blob => {
 
     const doc = new jsPDF();
 
-    // Cabeçalho do PDF
     doc.setFontSize(20);
     doc.text(reportTitle, 15, 20);
     doc.setFontSize(10);
     doc.text(`Data: ${dateText}`, 15, 30);
     doc.text(`Total de Itens: ${report.totalItems}`, 150, 30);
 
-    if (report.type === 'delivery' && report.notes) {
-        doc.text(`Obs: ${report.notes}`, 15, 38);
-        doc.line(15, 42, 195, 42);
-    } else {
-        doc.line(15, 35, 195, 35);
+    let startYOffset = 35;
+
+    if (report.type === 'inventory' && report.locationName) {
+        doc.text(`Local: ${report.locationName}`, 15, 36);
+        startYOffset = 42;
     }
 
-    const startY = (report.type === 'delivery' && report.notes) ? 45 : 40;
+    if (report.type === 'delivery' && report.notes) {
+        doc.text(`Obs: ${report.notes}`, 15, startYOffset);
+        doc.line(15, startYOffset + 4, 195, startYOffset + 4);
+        startYOffset += 7;
+    } else {
+        doc.line(15, startYOffset, 195, startYOffset);
+        startYOffset += 5;
+    }
+
+    const startY = startYOffset;
 
     const sortedItems = [...report.items].sort((a, b) =>
         a.sku.localeCompare(b.sku, undefined, { numeric: true, sensitivity: 'base' })
@@ -109,8 +118,11 @@ export const shareReport = async (report: Report, sequentialId: number) => {
     const reportTitle = report.title || defaultTitle;
     const dateText = report.createdAt?.toDate ? report.createdAt.toDate().toLocaleString('pt-BR') : 'Processando...';
 
+    // Sanitize the title to be used as a filename (remove invalid characters)
+    const sanitizedTitle = reportTitle.replace(/[^a-z0-9]/gi, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
+
     const pdfBlob = generatePdfBlob(report, sequentialId);
-    const pdfFile = new File([pdfBlob], `${report.type}_${sequentialId}.pdf`, { type: 'application/pdf' });
+    const pdfFile = new File([pdfBlob], `${sanitizedTitle}.pdf`, { type: 'application/pdf' });
 
     const shareText = `📊 *${reportTitle}*\n📅 *Data:* ${dateText}\n📝 *Itens:* ${report.totalItems}`;
 
@@ -208,6 +220,10 @@ export const printWebReport = (report: Report, sequentialId: number) => {
            </div>`
         : '';
 
+    const locationHtml = (report.type === 'inventory' && report.locationName)
+        ? `<p style="margin: 5px 0 0 0; color: #555;"><strong>Local:</strong> ${report.locationName}</p>`
+        : '';
+
     const html = `
         <html>
             <head>
@@ -218,16 +234,18 @@ export const printWebReport = (report: Report, sequentialId: number) => {
                     th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
                     th { background-color: #e2e8f0 !important; }
                     tbody tr:nth-child(even) { background-color: #f2f2f2 !important; }
-                    .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #333; padding-bottom: 10px; }
+                    .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #333; padding-bottom: 10px; }
                     .diff-pos { color: green; font-weight: bold; }
                     .diff-neg { color: red; font-weight: bold; }
+                    h1 { margin-bottom: 5px; }
                 </style>
             </head>
             <body>
                 <div class="header">
                     <div>
                         <h1>${reportTitle}</h1>
-                        <p>Data: ${dateText}</p>
+                        ${locationHtml}
+                        <p style="margin-top: 5px;">Data: ${dateText}</p>
                     </div>
                     <div style="text-align: right">
                         <p>Total de Itens: ${report.totalItems}</p>

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Settings as SettingsIcon, User, Shield, Bell, Info, MapPin, Database as DatabaseIcon } from 'lucide-react';
+import { Settings as SettingsIcon, User, Shield, Bell, Info, MapPin, Database as DatabaseIcon, Sliders } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { auth, db } from '../db/firebase';
@@ -17,6 +17,10 @@ interface NotificationSettings {
     emailAlerts: boolean;
 }
 
+interface GeneralSettings {
+    disableDecimals: boolean;
+}
+
 const Configuracoes = () => {
     const { user, isAdmin, allowRegistration } = useAuth();
     const { theme, setTheme } = useTheme();
@@ -30,6 +34,10 @@ const Configuracoes = () => {
         emailAlerts: false
     });
 
+    const [generalOptions, setGeneralOptions] = useState<GeneralSettings>({
+        disableDecimals: false
+    });
+
     useEffect(() => {
         if (user) {
             const loadUserNotifications = async () => {
@@ -38,7 +46,14 @@ const Configuracoes = () => {
                     setNotifications(prev => ({ ...prev, ...settingsDoc.data() as NotificationSettings }));
                 }
             };
+            const loadGeneralOptions = async () => {
+                const optionsDoc = await getDoc(doc(db, 'users', user.uid, 'settings', 'general'));
+                if (optionsDoc.exists()) {
+                    setGeneralOptions(prev => ({ ...prev, ...optionsDoc.data() as GeneralSettings }));
+                }
+            };
             loadUserNotifications();
+            loadGeneralOptions();
         }
     }, [user]);
 
@@ -53,8 +68,20 @@ const Configuracoes = () => {
         }
     };
 
+    const updateGeneralOption = async (key: string, value: any) => {
+        if (!user) return;
+        const newOptions = { ...generalOptions, [key]: value };
+        setGeneralOptions(newOptions);
+        try {
+            await setDoc(doc(db, 'users', user.uid, 'settings', 'general'), newOptions, { merge: true });
+        } catch (error) {
+            console.error('Erro ao salvar opções:', error);
+        }
+    };
+
     const sections = [
         { id: 'Geral', title: 'Conta', icon: User, description: 'Gerencie suas informações de perfil e senha' },
+        { id: 'Opções', title: 'Opções', icon: Sliders, description: 'Configure o comportamento de campos e regras do sistema' },
         { id: 'Notificações', title: 'Notificações', icon: Bell, description: 'Configure alertas de estoque baixo e novos relatórios' },
         { id: 'Locais', title: 'Locais de Estoque', icon: MapPin, description: 'Gerencie depósitos e prateleiras' },
         { id: 'Database', title: 'Banco de Dados', icon: DatabaseIcon, description: 'Exportar dados, limpar cache e backups', adminOnly: true },
@@ -126,6 +153,37 @@ const Configuracoes = () => {
                                 >
                                     Sair da Conta
                                 </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {activeTab === 'Opções' && (
+                        <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-300">
+                            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-8">
+                                <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-6 flex items-center gap-2">
+                                    <Sliders className="text-blue-500" size={24} />
+                                    Opções do Sistema
+                                </h2>
+
+                                <div className="space-y-8">
+                                    <div className="flex items-center justify-between p-4 bg-slate-100/30 dark:bg-slate-800/30 rounded-2xl border border-slate-200 dark:border-slate-800">
+                                        <div className="flex items-center gap-4">
+                                            <div className="p-2 bg-purple-500/10 rounded-xl text-purple-500">
+                                                <Sliders size={20} />
+                                            </div>
+                                            <div>
+                                                <h3 className="text-slate-900 dark:text-white font-bold">Desativar Quantidades Decimais</h3>
+                                                <p className="text-slate-500 dark:text-slate-400 text-sm">Impede o uso de ponto/vírgula nas telas de registro</p>
+                                            </div>
+                                        </div>
+                                        <div
+                                            onClick={() => updateGeneralOption('disableDecimals', !generalOptions.disableDecimals)}
+                                            className={`w-12 h-6 rounded-full p-1 transition-all duration-300 flex items-center cursor-pointer shrink-0 ${generalOptions.disableDecimals ? 'bg-blue-600 justify-end' : 'bg-slate-200 dark:bg-slate-700 justify-start'}`}
+                                        >
+                                            <div className="w-4 h-4 bg-white rounded-full shadow-md" />
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     )}
