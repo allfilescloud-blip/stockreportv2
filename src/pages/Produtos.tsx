@@ -187,15 +187,15 @@ const Produtos = () => {
 
         const tableData = [...filteredProducts].map(p => [
             p.sku,
-            p.ean || '-',
             p.description,
             p.model || '-',
+            p.ean || '-',
             p.status === 'active' ? 'Ativo' : 'Inativo'
         ]);
 
         autoTable(doc, {
             startY: 43,
-            head: [['SKU', 'EAN', 'Descrição', 'Modelo', 'Status']],
+            head: [['SKU', 'Descrição', 'Modelo', 'EAN', 'Status']],
             body: tableData,
             headStyles: { fillColor: [226, 232, 240], textColor: [51, 65, 85] },
             alternateRowStyles: { fillColor: [241, 245, 249] },
@@ -411,9 +411,9 @@ const Produtos = () => {
                                             <thead>
                                                 <tr>
                                                     <th>SKU</th>
-                                                    <th>EAN</th>
                                                     <th>Descrição</th>
                                                     <th>Modelo</th>
+                                                    <th>EAN</th>
                                                     <th>Status</th>
                                                 </tr>
                                             </thead>
@@ -421,9 +421,9 @@ const Produtos = () => {
                                                 ${filteredProducts.map((p: Product) => `
                                                     <tr>
                                                         <td>${p.sku}</td>
-                                                        <td>${p.ean || '-'}</td>
                                                         <td>${p.description}</td>
                                                         <td>${p.model || '-'}</td>
+                                                        <td>${p.ean || '-'}</td>
                                                         <td>
                                                             <span class="status ${p.status}">
                                                                 ${p.status === 'active' ? 'Ativo' : 'Inativo'}
