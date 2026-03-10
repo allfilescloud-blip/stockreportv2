@@ -23,9 +23,10 @@ export interface Report {
     locationName?: string;
     notes?: string;
     sequentialId?: number;
+    imageUrls?: string[];
 }
 
-export const generatePdfBlob = (report: Report, sequentialId: number): Blob => {
+export const generatePdfBlob = (report: Report, sequentialId: number, includeImages: boolean = true): Blob => {
     const dateText = report.createdAt?.toDate ? report.createdAt.toDate().toLocaleString('pt-BR') : 'Processando...';
 
     let defaultTitle = `Relatório #${sequentialId}`;
@@ -106,10 +107,46 @@ export const generatePdfBlob = (report: Report, sequentialId: number): Blob => {
         alternateRowStyles: { fillColor: [241, 245, 249] },
     });
 
+    // Add images at the end if it's a delivery report
+    if (includeImages && report.type === 'delivery' && report.imageUrls && report.imageUrls.length > 0) {
+        doc.addPage();
+        doc.setFontSize(16);
+        doc.text('Imagens Anexadas', 15, 20);
+        doc.line(15, 22, 195, 22);
+
+        let imgX = 15;
+        let imgY = 30;
+        const imgSize = 58;
+        const spacing = 5;
+
+        report.imageUrls.forEach((url, idx) => {
+            // This is a synchronous call in a simplified scenario. 
+            // In a real browser app, we might need to pre-load images as base64 or use a plugin.
+            // jspdf supports adding images by URL if they are already in cache or local.
+            // For Firebase storage URLs, we might need to handle CORS and loading.
+            try {
+                doc.addImage(url, 'JPEG', imgX, imgY, imgSize, imgSize);
+            } catch (e) {
+                console.error('Erro ao adicionar imagem ao PDF:', e);
+            }
+
+            imgX += imgSize + spacing;
+            if (imgX > 150) {
+                imgX = 15;
+                imgY += imgSize + spacing;
+            }
+            if (imgY > 240 && idx < report.imageUrls!.length - 1) {
+                doc.addPage();
+                imgY = 20;
+                imgX = 15;
+            }
+        });
+    }
+
     return doc.output('blob');
 };
 
-export const shareReport = async (report: Report, sequentialId: number) => {
+export const shareReport = async (report: Report, sequentialId: number, includeImages: boolean = true) => {
     let defaultTitle = `Relatório #${sequentialId}`;
     if (report.type === 'inventory') defaultTitle = `Inventário #${sequentialId}`;
     if (report.type === 'delivery') defaultTitle = `Entrega #${sequentialId}`;
@@ -121,7 +158,7 @@ export const shareReport = async (report: Report, sequentialId: number) => {
     // Sanitize the title to be used as a filename (remove invalid characters)
     const sanitizedTitle = reportTitle.replace(/[^a-z0-9]/gi, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
 
-    const pdfBlob = generatePdfBlob(report, sequentialId);
+    const pdfBlob = generatePdfBlob(report, sequentialId, includeImages);
     const pdfFile = new File([pdfBlob], `${sanitizedTitle}.pdf`, { type: 'application/pdf' });
 
     const shareText = `📊 *${reportTitle}*\n📅 *Data:* ${dateText}\n📝 *Itens:* ${report.totalItems}`;
@@ -155,7 +192,7 @@ export const shareReport = async (report: Report, sequentialId: number) => {
     }
 };
 
-export const printWebReport = (report: Report, sequentialId: number) => {
+export const printWebReport = (report: Report, sequentialId: number, includeImages: boolean = true) => {
     const printWindow = window.open('', '_blank');
     if (!printWindow) return;
 
@@ -224,6 +261,15 @@ export const printWebReport = (report: Report, sequentialId: number) => {
         ? `<p style="margin: 5px 0 0 0; color: #555;"><strong>Local:</strong> ${report.locationName}</p>`
         : '';
 
+    const imagesHtml = (includeImages && report.type === 'delivery' && report.imageUrls && report.imageUrls.length > 0)
+        ? `<div style="margin-top: 30px; border-top: 2px solid #333; padding-top: 20px;">
+               <h3 style="margin-bottom: 15px;">Imagens Anexadas</h3>
+               <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px;">
+                   ${report.imageUrls.map(url => `<img src="${url}" style="width: 100%; height: 200px; object-fit: cover; border-radius: 8px; border: 1px solid #ddd;" />`).join('')}
+               </div>
+           </div>`
+        : '';
+
     const html = `
         <html>
             <head>
@@ -238,6 +284,9 @@ export const printWebReport = (report: Report, sequentialId: number) => {
                     .diff-pos { color: green; font-weight: bold; }
                     .diff-neg { color: red; font-weight: bold; }
                     h1 { margin-bottom: 5px; }
+                    @media print {
+                        img { break-inside: avoid; }
+                    }
                 </style>
             </head>
             <body>
@@ -260,6 +309,7 @@ export const printWebReport = (report: Report, sequentialId: number) => {
                         ${tableBody}
                     </tbody>
                 </table>
+                ${imagesHtml}
             </body>
         </html>
     `;

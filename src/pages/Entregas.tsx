@@ -5,12 +5,14 @@ import {
     updateDoc,
     doc,
     arrayUnion,
+    arrayRemove,
     serverTimestamp,
     deleteDoc,
     getDoc,
 } from 'firebase/firestore';
-import { db } from '../db/firebase';
-import { Search, Plus, Printer, Trash2, Edit2, X, AlertTriangle, Share2, ClipboardList, Eye, Calculator, Layers, ScanBarcode, StopCircle } from 'lucide-react';
+import { db, storage } from '../db/firebase';
+import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
+import { Search, Plus, Printer, Trash2, Edit2, X, AlertTriangle, Share2, ClipboardList, Eye, Calculator, Layers, ScanBarcode, StopCircle, Image as ImageIcon, ChevronLeft, ChevronRight, Upload } from 'lucide-react';
 import { shareReport, printWebReport } from '../utils/reportUtils';
 import { ScannerModal } from '../components/ScannerModal';
 import { useProducts } from '../contexts/ProductsContext';
@@ -36,6 +38,7 @@ interface Report {
     notes?: string;
     title?: string;
     sequentialId?: number;
+    imageUrls?: string[];
 }
 
 const Entregas = () => {
@@ -60,6 +63,17 @@ const Entregas = () => {
     const [reportIdToDelete, setReportIdToDelete] = useState<string | null>(null);
     const [selectedReports, setSelectedReports] = useState<string[]>([]);
     const [isScanning, setIsScanning] = useState(false);
+    const [tempImages, setTempImages] = useState<File[]>([]);
+    const [isCarouselOpen, setIsCarouselOpen] = useState(false);
+    const [carouselImages, setCarouselImages] = useState<string[]>([]);
+    const [carouselIndex, setCarouselIndex] = useState(0);
+    const [isUploading, setIsUploading] = useState(false);
+    const [currentCarouselReportId, setCurrentCarouselReportId] = useState<string | null>(null);
+    const [showImageDeleteConfirm, setShowImageDeleteConfirm] = useState(false);
+    const [imageToDeleteUrl, setImageToDeleteUrl] = useState<string | null>(null);
+    const [showPrintConfirm, setShowPrintConfirm] = useState(false);
+    const [reportToPrint, setReportToPrint] = useState<Report | null>(null);
+    const [printIdToPrint, setPrintIdToPrint] = useState<number>(0);
 
     const { reports, loading } = useReports<Report>('delivery', filterDate);
     const { user } = useAuth();
@@ -146,6 +160,42 @@ const Entregas = () => {
         }
     };
 
+    const handleDeleteImage = async () => {
+        if (!currentCarouselReportId || !imageToDeleteUrl) return;
+
+        try {
+            // 1. Delete from Firebase Storage
+            const imageRef = ref(storage, imageToDeleteUrl);
+            await deleteObject(imageRef);
+
+            // 2. Update Firestore document (remove from array)
+            const reportRef = doc(db, 'reports', currentCarouselReportId);
+            await updateDoc(reportRef, {
+                imageUrls: arrayRemove(imageToDeleteUrl)
+            });
+
+            // 3. Update local state
+            setCarouselImages(prev => prev.filter(url => url !== imageToDeleteUrl));
+
+            // Adjust carousel index if needed
+            if (carouselIndex >= carouselImages.length - 1 && carouselIndex > 0) {
+                setCarouselIndex(carouselIndex - 1);
+            }
+
+            setShowImageDeleteConfirm(false);
+            setImageToDeleteUrl(null);
+
+            // If it was the last image, the carousel will close due to carouselImages.length check in JSX
+            // but we might want to close it explicitly if empty
+            if (carouselImages.length === 1) {
+                setIsCarouselOpen(false);
+            }
+        } catch (error) {
+            console.error("Erro ao excluir imagem:", error);
+            alert("Erro ao excluir imagem. Tente novamente.");
+        }
+    };
+
     const confirmUpdate = () => {
         if (duplicateItemIndex !== null) {
             const updatedItems = [...reportItems];
@@ -161,17 +211,43 @@ const Entregas = () => {
         }
     };
 
+    const uploadImages = async (reportId: string): Promise<string[]> => {
+        if (tempImages.length === 0) return currentReport?.imageUrls || [];
+
+        setIsUploading(true);
+        const uploadedUrls: string[] = [...(currentReport?.imageUrls || [])];
+
+        for (const file of tempImages) {
+            const imageRef = ref(storage, `delivery_images/${user?.uid}/${reportId}/${Date.now()}_${file.name}`);
+            const snapshot = await uploadBytes(imageRef, file);
+            const url = await getDownloadURL(snapshot.ref);
+            uploadedUrls.push(url);
+        }
+
+        setIsUploading(false);
+        return uploadedUrls;
+    };
+
     const saveReport = async () => {
         if (reportItems.length === 0) return;
 
-        let reportRef;
+        let reportId = currentReport?.id;
+        let finalImageUrls: string[] = currentReport?.imageUrls || [];
+
+        // If it's a new report, we need its ID first or we create one
+        // Firestore addDoc returns a ref with an ID.
+        // We might want to upload images AFTER creating the doc if it's new, 
+        // but for existing ones we can do it during update.
+
         if (currentReport) {
-            reportRef = doc(db, 'reports', currentReport.id);
+            finalImageUrls = await uploadImages(currentReport.id);
+            const reportRef = doc(db, 'reports', currentReport.id);
             await updateDoc(reportRef, {
                 title: title.trim(),
                 items: reportItems,
                 totalItems: reportItems.length,
                 notes: notes,
+                imageUrls: finalImageUrls,
                 updatedAt: serverTimestamp()
             });
         } else {
@@ -186,10 +262,15 @@ const Entregas = () => {
                 totalItems: reportItems.length,
                 notes: notes,
                 sequentialId: nextSequentialId,
+                imageUrls: [], // Placeholder
                 createdAt: serverTimestamp(),
                 updatedAt: serverTimestamp()
             });
-            reportRef = newDoc;
+            reportId = newDoc.id;
+            finalImageUrls = await uploadImages(newDoc.id);
+            await updateDoc(doc(db, 'reports', newDoc.id), {
+                imageUrls: finalImageUrls
+            });
         }
 
         for (const item of reportItems) {
@@ -197,7 +278,7 @@ const Entregas = () => {
                 action: 'Entrega (Recebimento)',
                 date: new Date().toISOString(),
                 details: `Quantidade recebida: ${item.currentCount}`,
-                reportId: currentReport ? currentReport.id : reportRef.id
+                reportId: reportId
             };
 
             await updateDoc(doc(db, 'products', item.productId), {
@@ -210,6 +291,7 @@ const Entregas = () => {
         setReportItems([]);
         setNotes('');
         setTitle('');
+        setTempImages([]);
         setCurrentReport(null);
     };
 
@@ -234,7 +316,13 @@ const Entregas = () => {
     };
 
     const handlePrintReport = (report: Report, printId: number) => {
-        printWebReport(report, printId);
+        if (report.type === 'delivery' && report.imageUrls && report.imageUrls.length > 0) {
+            setReportToPrint(report);
+            setPrintIdToPrint(printId);
+            setShowPrintConfirm(true);
+        } else {
+            printWebReport(report, printId, false);
+        }
     };
 
     const handleToggleSelectReport = (reportId: string) => {
@@ -383,6 +471,21 @@ const Entregas = () => {
                                                 </td>
                                                 <td className="px-6 py-4 text-right">
                                                     <div className="flex justify-end gap-2 text-nowrap">
+                                                        {report.imageUrls && report.imageUrls.length > 0 && (
+                                                            <button
+                                                                onClick={() => {
+                                                                    setCarouselImages(report.imageUrls || []);
+                                                                    setCarouselIndex(0);
+                                                                    setCurrentCarouselReportId(report.id);
+                                                                    setIsCarouselOpen(true);
+                                                                }}
+                                                                className="p-2 text-blue-500 hover:bg-blue-500/10 rounded-lg transition-all relative flex items-center gap-1"
+                                                                title="Ver Imagens"
+                                                            >
+                                                                <ImageIcon size={18} />
+                                                                <span className="text-[10px] font-bold">{report.imageUrls.length}</span>
+                                                            </button>
+                                                        )}
                                                         {report.notes && (
                                                             <div className="p-2 text-blue-400" title={report.notes}>
                                                                 <Eye size={18} />
@@ -463,6 +566,20 @@ const Entregas = () => {
 
                                         <div className="flex items-center justify-between pt-2 border-t border-slate-200/50 dark:border-slate-800/50">
                                             <div className="flex gap-2">
+                                                {report.imageUrls && report.imageUrls.length > 0 && (
+                                                    <button
+                                                        onClick={() => {
+                                                            setCarouselImages(report.imageUrls || []);
+                                                            setCarouselIndex(0);
+                                                            setCurrentCarouselReportId(report.id);
+                                                            setIsCarouselOpen(true);
+                                                        }}
+                                                        className="px-3 py-2 bg-blue-600/10 text-blue-400 rounded-lg border border-blue-500/20 flex items-center gap-1"
+                                                    >
+                                                        <ImageIcon size={14} />
+                                                        <span className="text-[10px] font-bold">{report.imageUrls.length}</span>
+                                                    </button>
+                                                )}
                                                 <button
                                                     onClick={() => {
                                                         setCurrentReport(report);
@@ -613,28 +730,72 @@ const Entregas = () => {
                                 </div>
                             </div>
 
-                            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3">
-                                <div className="flex justify-between items-center mb-1.5 ml-1">
-                                    <label className="block text-[10px] font-bold text-slate-500 uppercase">Observações (Opcional)</label>
-                                    <span className={`text-[10px] font-bold ${notes.length >= 45 ? 'text-amber-500' : 'text-slate-600'}`}>
-                                        {notes.length}/50
-                                    </span>
+                            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3 flex items-center justify-between gap-4">
+                                <div className="flex-1">
+                                    <div className="flex justify-between items-center mb-1.5 ml-1">
+                                        <label className="block text-[10px] font-bold text-slate-500 uppercase">Observações (Opcional)</label>
+                                        <span className={`text-[10px] font-bold ${notes.length >= 45 ? 'text-amber-500' : 'text-slate-600'}`}>
+                                            {notes.length}/50
+                                        </span>
+                                    </div>
+                                    <input
+                                        type="text"
+                                        value={notes}
+                                        onChange={(e) => setNotes(e.target.value.slice(0, 50))}
+                                        maxLength={50}
+                                        placeholder="Ex: NF #1234, entregador Fulano..."
+                                        className="w-full bg-slate-100/50 dark:bg-slate-800/50 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-2 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-purple-500 outline-none transition-all"
+                                    />
                                 </div>
-                                <input
-                                    type="text"
-                                    value={notes}
-                                    onChange={(e) => setNotes(e.target.value.slice(0, 50))}
-                                    maxLength={50}
-                                    placeholder="Ex: NF #1234, entregador Fulano..."
-                                    className="w-full bg-slate-100/50 dark:bg-slate-800/50 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-2 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-purple-500 outline-none transition-all"
-                                />
+                                <div className="shrink-0 flex flex-col items-center">
+                                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1.5 text-center">Imagens</label>
+                                    <div className="flex items-center gap-2">
+                                        {(currentReport?.imageUrls?.length || 0) + tempImages.length > 0 && (
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    const allImages = [...(currentReport?.imageUrls || []), ...tempImages.map(f => URL.createObjectURL(f))];
+                                                    setCarouselImages(allImages);
+                                                    setCarouselIndex(0);
+                                                    setIsCarouselOpen(true);
+                                                }}
+                                                className="p-2 bg-blue-500/10 text-blue-500 rounded-lg border border-blue-500/20 flex items-center gap-2"
+                                            >
+                                                <ImageIcon size={20} />
+                                                <span className="font-bold text-sm">{(currentReport?.imageUrls?.length || 0) + tempImages.length}</span>
+                                            </button>
+                                        )}
+                                        <label className="p-2 bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-purple-500 dark:hover:text-purple-400 rounded-lg border border-slate-300 dark:border-slate-700 cursor-pointer transition-all shadow-sm">
+                                            <Upload size={20} />
+                                            <input
+                                                type="file"
+                                                multiple
+                                                accept="image/*"
+                                                className="hidden"
+                                                onChange={(e) => {
+                                                    if (e.target.files) {
+                                                        setTempImages([...tempImages, ...Array.from(e.target.files)]);
+                                                    }
+                                                }}
+                                            />
+                                        </label>
+                                    </div>
+                                </div>
                             </div>
 
                             <div className="space-y-4">
-                                <h3 className="text-sm font-semibold text-slate-500 dark:text-slate-400 uppercase flex items-center gap-2">
-                                    <ClipboardList size={16} />
-                                    Itens na Entrega ({reportItems.length})
-                                </h3>
+                                <div className="flex justify-between items-center">
+                                    <h3 className="text-sm font-semibold text-slate-500 dark:text-slate-400 uppercase flex items-center gap-2">
+                                        <ClipboardList size={16} />
+                                        Itens na Entrega ({reportItems.length})
+                                    </h3>
+                                    {isUploading && (
+                                        <div className="flex items-center gap-2 text-blue-500 animate-pulse">
+                                            <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" />
+                                            <span className="text-xs font-bold uppercase">Subindo imagens...</span>
+                                        </div>
+                                    )}
+                                </div>
                                 <div className="hidden md:block overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800">
                                     <table className="w-full text-left text-sm">
                                         <thead className="bg-white dark:bg-slate-900 text-slate-500 uppercase text-[10px] tracking-wider">
@@ -906,6 +1067,146 @@ const Entregas = () => {
                                     className="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-3 rounded-xl transition-all shadow-lg active:scale-95"
                                 >
                                     Excluir
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Modal Carrossel de Imagens */}
+            {isCarouselOpen && carouselImages.length > 0 && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/95 backdrop-blur-xl transition-all animate-in fade-in duration-300">
+                    <div className="absolute top-6 right-6 z-[110] flex gap-3">
+                        <button
+                            onClick={() => {
+                                setImageToDeleteUrl(carouselImages[carouselIndex]);
+                                setShowImageDeleteConfirm(true);
+                            }}
+                            className="p-3 text-red-400 hover:text-red-500 bg-white/10 hover:bg-white/20 rounded-full transition-all"
+                            title="Excluir Imagem"
+                        >
+                            <Trash2 size={24} />
+                        </button>
+                        <button
+                            onClick={() => setIsCarouselOpen(false)}
+                            className="p-3 text-white/50 hover:text-white bg-white/10 hover:bg-white/20 rounded-full transition-all"
+                            title="Fechar"
+                        >
+                            <X size={28} />
+                        </button>
+                    </div>
+
+                    <div className="relative w-full h-full flex items-center justify-center p-4">
+                        {carouselImages.length > 1 && (
+                            <>
+                                <button
+                                    onClick={() => setCarouselIndex((prev) => (prev === 0 ? carouselImages.length - 1 : prev - 1))}
+                                    className="absolute left-4 z-[110] p-4 text-white/50 hover:text-white bg-white/5 hover:bg-white/10 rounded-full transition-all active:scale-95"
+                                >
+                                    <ChevronLeft size={32} />
+                                </button>
+                                <button
+                                    onClick={() => setCarouselIndex((prev) => (prev === carouselImages.length - 1 ? 0 : prev + 1))}
+                                    className="absolute right-4 z-[110] p-4 text-white/50 hover:text-white bg-white/5 hover:bg-white/10 rounded-full transition-all active:scale-95"
+                                >
+                                    <ChevronRight size={32} />
+                                </button>
+                            </>
+                        )}
+
+                        <div className="relative max-w-5xl max-h-[85vh] w-full flex items-center justify-center">
+                            <img
+                                src={carouselImages[carouselIndex]}
+                                alt={`Anexo ${carouselIndex + 1}`}
+                                className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl transition-all duration-300 animate-in zoom-in-95"
+                            />
+
+                            <div className="absolute -bottom-12 left-0 right-0 flex justify-center items-center gap-3">
+                                <span className="text-white/70 text-sm font-bold bg-white/10 px-4 py-1.5 rounded-full backdrop-blur-md">
+                                    {carouselIndex + 1} / {carouselImages.length}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Modal de Confirmação de Exclusão de Imagem no Carrossel */}
+            {showImageDeleteConfirm && (
+                <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+                    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl animate-in fade-in zoom-in duration-200">
+                        <div className="p-6 text-center">
+                            <div className="w-16 h-16 bg-red-500/10 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4">
+                                <Trash2 size={32} />
+                            </div>
+                            <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Excluir Imagem?</h2>
+                            <p className="text-slate-500 dark:text-slate-400 mb-6 text-sm">
+                                Tem certeza que deseja remover esta imagem da entrega? O arquivo será apagado permanentemente.
+                            </p>
+                            <div className="flex gap-3">
+                                <button
+                                    onClick={() => {
+                                        setShowImageDeleteConfirm(false);
+                                        setImageToDeleteUrl(null);
+                                    }}
+                                    className="flex-1 py-3 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-white font-semibold transition-colors"
+                                >
+                                    Cancelar
+                                </button>
+                                <button
+                                    onClick={handleDeleteImage}
+                                    className="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-3 rounded-xl transition-all shadow-lg active:scale-95"
+                                >
+                                    Excluir
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Modal de Confirmação de Impressão Condicional */}
+            {showPrintConfirm && reportToPrint && (
+                <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+                    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl animate-in fade-in zoom-in duration-200">
+                        <div className="p-6 text-center">
+                            <div className="w-16 h-16 bg-blue-500/10 text-blue-500 rounded-full flex items-center justify-center mx-auto mb-4">
+                                <Printer size={32} />
+                            </div>
+                            <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Imprimir com Imagens?</h2>
+                            <p className="text-slate-500 dark:text-slate-400 mb-6 text-sm">
+                                Este relatório contém imagens anexadas. Deseja incluí-las na impressão?
+                            </p>
+                            <div className="flex flex-col gap-3">
+                                <button
+                                    onClick={() => {
+                                        printWebReport(reportToPrint, printIdToPrint, true);
+                                        setShowPrintConfirm(false);
+                                        setReportToPrint(null);
+                                    }}
+                                    className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2"
+                                >
+                                    <ImageIcon size={18} /> Sim, incluir imagens
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        printWebReport(reportToPrint, printIdToPrint, false);
+                                        setShowPrintConfirm(false);
+                                        setReportToPrint(null);
+                                    }}
+                                    className="w-full bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white font-bold py-3 rounded-xl transition-all hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-95"
+                                >
+                                    Não, apenas o relatório
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        setShowPrintConfirm(false);
+                                        setReportToPrint(null);
+                                    }}
+                                    className="w-full py-2 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-white font-semibold transition-colors"
+                                >
+                                    Cancelar
                                 </button>
                             </div>
                         </div>
