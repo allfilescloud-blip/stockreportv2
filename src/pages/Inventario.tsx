@@ -538,7 +538,7 @@ const Inventario = () => {
                                                 </td>
                                                 <td className="px-6 py-4 text-center">
                                                     <span className="bg-emerald-500/10 text-emerald-400 px-3 py-1 rounded-full text-xs font-bold">
-                                                        {report.totalItems} itens
+                                                        {report.totalItems}
                                                     </span>
                                                 </td>
                                                 <td className="px-6 py-4 text-right">
@@ -613,7 +613,7 @@ const Inventario = () => {
                                                 </div>
                                             </div>
                                             <span className="bg-emerald-500/10 text-emerald-400 px-2 py-1 rounded-full text-[10px] font-bold">
-                                                {report.totalItems} ITENS
+                                                {report.totalItems}
                                             </span>
                                         </div>
 
