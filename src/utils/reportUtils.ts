@@ -1,5 +1,4 @@
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
+import html2pdf from 'html2pdf.js';
 import toast from 'react-hot-toast';
 
 export interface ReportItem {
@@ -38,7 +37,7 @@ const getBase64FromUrl = async (url: string): Promise<string> => {
 };
 
 export const generatePdfBlob = async (report: Report, sequentialId: number, includeImages: boolean = true): Promise<Blob> => {
-    const dateText = report.createdAt?.toDate ? report.createdAt.toDate().toLocaleString('pt-BR') : 'Processando...';
+    const dateText = report.createdAt?.toDate ? report.createdAt.toDate().toLocaleString('pt-BR') : new Date().toLocaleString('pt-BR');
 
     let defaultTitle = `Relatório #${sequentialId}`;
     if (report.type === 'inventory') defaultTitle = `Inventário #${sequentialId}`;
@@ -47,113 +46,125 @@ export const generatePdfBlob = async (report: Report, sequentialId: number, incl
 
     const reportTitle = report.title || defaultTitle;
 
-    const doc = new jsPDF();
-
-    doc.setFontSize(20);
-    doc.text(reportTitle, 15, 20);
-    doc.setFontSize(10);
-    doc.text(`Data: ${dateText}`, 15, 30);
-    doc.text(`Total de Itens: ${report.totalItems}`, 150, 30);
-
-    let startYOffset = 35;
-
-    if (report.type === 'inventory' && report.locationName) {
-        doc.text(`Local: ${report.locationName}`, 15, 36);
-        startYOffset = 42;
-    }
-
-    if (report.type === 'delivery' && report.notes) {
-        doc.text(`Obs: ${report.notes}`, 15, startYOffset);
-        doc.line(15, startYOffset + 4, 195, startYOffset + 4);
-        startYOffset += 7;
-    } else {
-        doc.line(15, startYOffset, 195, startYOffset);
-        startYOffset += 5;
-    }
-
-    const startY = startYOffset;
-
-    const sortedItems = [...report.items].sort((a, b) =>
-        a.sku.localeCompare(b.sku, undefined, { numeric: true, sensitivity: 'base' })
-    );
-
-    let headRow: string[] = [];
-    let tableData: any[][] = [];
-
+    let tableHeaders = '';
     if (report.type === 'inventory') {
-        headRow = ['SKU', 'Descrição', 'Anterior', 'Atual', 'Diferença'];
-        tableData = sortedItems.map(item => {
+        tableHeaders = `<th>SKU</th><th>Descrição</th><th>Anterior</th><th>Atual</th><th>Diferença</th>`;
+    } else if (report.type === 'tested') {
+        tableHeaders = `<th>SKU</th><th>Descrição</th><th>Quantidade Restante</th><th>Quantidade Testada</th>`;
+    } else if (report.type === 'delivery') {
+        tableHeaders = `<th>SKU</th><th>Descrição</th><th>Quantidade (Recebida)</th>`;
+    }
+
+    const sortedItems = [...report.items].sort((a, b) => a.sku.localeCompare(b.sku, undefined, { numeric: true, sensitivity: 'base' }));
+
+    let tableBody = '';
+    sortedItems.forEach(item => {
+        if (report.type === 'inventory') {
             const prev = item.previousCount || 0;
             const diff = item.currentCount - prev;
-            return [
-                item.sku,
-                item.description,
-                prev.toString(),
-                item.currentCount.toString(),
-                diff > 0 ? `+${diff}` : diff.toString()
-            ];
-        });
-    } else if (report.type === 'tested') {
-        headRow = ['SKU', 'Descrição', 'Quantidade Restante', 'Quantidade Testada'];
-        tableData = sortedItems.map(item => [
-            item.sku,
-            item.description,
-            (item.previousCount || 0).toString(),
-            item.currentCount.toString()
-        ]);
-    } else if (report.type === 'delivery') {
-        headRow = ['SKU', 'Descrição', 'Quantidade (Recebida)'];
-        tableData = sortedItems.map(item => [
-            item.sku,
-            item.description,
-            item.currentCount.toString()
-        ]);
-    }
-
-    autoTable(doc, {
-        startY: startY,
-        head: [headRow],
-        body: tableData,
-        headStyles: { fillColor: [226, 232, 240], textColor: [51, 65, 85] },
-        alternateRowStyles: { fillColor: [241, 245, 249] },
+            const diffClass = diff > 0 ? 'diff-pos' : diff < 0 ? 'diff-neg' : '';
+            tableBody += `
+                <tr>
+                    <td>${item.sku}</td>
+                    <td>${item.description}</td>
+                    <td>${prev}</td>
+                    <td>${item.currentCount}</td>
+                    <td class="${diffClass}">${diff > 0 ? '+' : ''}${diff}</td>
+                </tr>
+            `;
+        } else if (report.type === 'tested') {
+            const prev = item.previousCount || 0;
+            tableBody += `
+                <tr>
+                    <td>${item.sku}</td>
+                    <td>${item.description}</td>
+                    <td>${prev}</td>
+                    <td>${item.currentCount}</td>
+                </tr>
+            `;
+        } else if (report.type === 'delivery') {
+            tableBody += `
+                <tr>
+                    <td>${item.sku}</td>
+                    <td>${item.description}</td>
+                    <td>${item.currentCount}</td>
+                </tr>
+            `;
+        }
     });
 
-    // Add images at the end if it's a delivery report
+    const notesHtml = (report.type === 'delivery' && report.notes)
+        ? `<div style="margin-top: 15px; padding-top: 10px; border-top: 1px dotted #ccc;">
+               <strong>Observações:</strong> ${report.notes}
+           </div>`
+        : '';
+
+    const locationHtml = (report.type === 'inventory' && report.locationName)
+        ? `<p style="margin: 5px 0 0 0; color: #555;"><strong>Local:</strong> ${report.locationName}</p>`
+        : '';
+
+    let imagesHtml = '';
     if (includeImages && report.type === 'delivery' && report.imageUrls && report.imageUrls.length > 0) {
-        doc.addPage();
-        doc.setFontSize(16);
-        doc.text('Imagens Anexadas', 15, 20);
-        doc.line(15, 22, 195, 22);
+        imagesHtml = `<div style="margin-top: 30px; border-top: 2px solid #333; padding-top: 20px; page-break-before: always;">
+               <h3 style="margin-bottom: 15px;">Imagens Anexadas</h3>
+               <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px;">`;
 
-        let imgX = 15;
-        let imgY = 30;
-        const imgSize = 58;
-        const spacing = 5;
-
-        for (let i = 0; i < report.imageUrls.length; i++) {
-            const url = report.imageUrls[i];
+        for (const url of report.imageUrls) {
             try {
-                // Convert to base64 first to ensure it's loaded and CORS is handled via fetch
                 const base64 = await getBase64FromUrl(url);
-                doc.addImage(base64, 'JPEG', imgX, imgY, imgSize, imgSize);
+                imagesHtml += `<img src="${base64}" style="width: 100%; height: 250px; object-fit: contain; border-radius: 8px; border: 1px solid #ddd;" />`;
             } catch (e) {
-                console.error(`Erro ao adicionar imagem ${i} ao PDF:`, e);
-            }
-
-            imgX += imgSize + spacing;
-            if (imgX > 150) {
-                imgX = 15;
-                imgY += imgSize + spacing;
-            }
-            if (imgY > 240 && i < report.imageUrls.length - 1) {
-                doc.addPage();
-                imgY = 20;
-                imgX = 15;
+                console.error('Erro ao converter imagem:', e);
             }
         }
+        imagesHtml += `</div></div>`;
     }
 
-    return doc.output('blob');
+    const htmlString = `
+        <div style="font-family: sans-serif; padding: 20px; color: #333; max-width: 800px; margin: 0 auto;">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #333; padding-bottom: 10px;">
+                <div>
+                    <h1 style="margin-bottom: 5px;">${reportTitle}</h1>
+                    ${locationHtml}
+                    <p style="margin-top: 5px;">Data: ${dateText}</p>
+                </div>
+                <div style="text-align: right">
+                    <p>Total de Itens: ${report.totalItems}</p>
+                </div>
+            </div>
+            ${notesHtml}
+            <table style="width: 100%; border-collapse: collapse; margin-top: 20px;">
+                <thead>
+                    <tr>${tableHeaders.replace(/<th>/g, '<th style="background-color: #e2e8f0; border: 1px solid #ddd; padding: 12px; text-align: left;">')}</tr>
+                </thead>
+                <tbody>
+                    ${tableBody.replace(/<td>/g, '<td style="border: 1px solid #ddd; padding: 12px; text-align: left;">').replace(/<td class="diff-pos">/g, '<td style="border: 1px solid #ddd; padding: 12px; text-align: left; color: green; font-weight: bold;">').replace(/<td class="diff-neg">/g, '<td style="border: 1px solid #ddd; padding: 12px; text-align: left; color: red; font-weight: bold;">')}
+                </tbody>
+            </table>
+            ${imagesHtml}
+        </div>
+    `;
+
+    const element = document.createElement('div');
+    element.innerHTML = htmlString;
+    document.body.appendChild(element); // Necessário para imagens renderizarem temporariamente no html2pdf
+
+    const opt = {
+        margin:       10,
+        filename:     `${reportTitle}.pdf`,
+        image:        { type: 'jpeg' as const, quality: 0.98 },
+        html2canvas:  { scale: 2, useCORS: true },
+        jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' as const }
+    };
+
+    try {
+        const pdfBlob = await html2pdf().set(opt).from(element).output('blob');
+        document.body.removeChild(element);
+        return pdfBlob;
+    } catch (e) {
+        document.body.removeChild(element);
+        throw e;
+    }
 };
 
 export const shareReport = async (report: Report, sequentialId: number, includeImages: boolean = true) => {
