@@ -187,15 +187,13 @@ export const shareReport = async (report: Report, sequentialId: number, includeI
                 });
             } catch (error: any) {
                 if (error.name !== 'AbortError') {
-                    // Fallback para compartilhar apenas o texto se falhar com arquivo (ex: timeout de permissão ou limitação do OS)
-                    try {
-                        await navigator.share({ title: reportTitle, text: shareText });
-                    } catch (fallbackError: any) {
-                        if (fallbackError.name !== 'AbortError') {
-                            toast.error('Erro ao compartilhar relatório');
-                            console.error('Erro de fallback do share:', fallbackError);
-                        }
-                    }
+                    console.error("Erro na API de Web Share (Native):", error);
+                    toast.error(
+                        includeImages 
+                            ? 'O arquivo gerado ficou muito grande para este aparelho compartilhar. Tente enviar selecionando "Sem imagens"!' 
+                            : 'Erro ao compartilhar com a aplicação escolhida. Tente copiar o link ou enviar novamente.',
+                        { duration: 6000 }
+                    );
                 }
             }
         } else if (navigator.share) {
@@ -206,26 +204,18 @@ export const shareReport = async (report: Report, sequentialId: number, includeI
                 });
             } catch (error: any) {
                 if (error.name !== 'AbortError') {
-                    toast.error('Erro ao compartilhar texto');
-                    console.error(error);
+                    console.error("Erro no Share de Texto:", error);
+                    toast.error('Erro ao compartilhar texto. O dispositivo pode não suportar ou restringiu o app.');
                 }
             }
         } else {
-            if (navigator.clipboard) {
-                try {
-                    await navigator.clipboard.writeText(shareText);
-                    toast.success('Informações copiadas para a área de transferência!');
-                } catch (e) {
-                    toast.error('Acesso exclusivo ao clipboard falhou.');
-                }
-            } else {
-                toast.error('Compartilhamento não suportado neste dispositivo.');
-            }
+            await navigator.clipboard.writeText(shareText);
+            toast.success('Informações copiadas para a área de transferência!');
         }
     } catch (error) {
         toast.dismiss(loadingToast);
-        toast.error('Erro ao gerar relatório');
-        console.error(error);
+        toast.error('O arquivo gerado ficou complexo demais e não pôde ser gerado. Tente remover algumas imagens ou enviar "Sem imagens".', { duration: 6000 });
+        console.error("Erro Crítico ao gerar/compartilhar o relatório:", error);
     }
 };
 
