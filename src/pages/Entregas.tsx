@@ -312,7 +312,9 @@ const Entregas = () => {
     };
 
     const handleShare = async (report: Report, printId: number) => {
-        await shareReport(report, printId);
+        // Desabilitando imagens no compartilhamento nativo para evitar
+        // timeout da Web Share API no Mobile (NotAllowedError: user gesture)
+        await shareReport(report, printId, false);
     };
 
     const handlePrintReport = (report: Report, printId: number) => {

@@ -26,7 +26,18 @@ export interface Report {
     imageUrls?: string[];
 }
 
-export const generatePdfBlob = (report: Report, sequentialId: number, includeImages: boolean = true): Blob => {
+const getBase64FromUrl = async (url: string): Promise<string> => {
+    const response = await fetch(url);
+    const blob = await response.blob();
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+    });
+};
+
+export const generatePdfBlob = async (report: Report, sequentialId: number, includeImages: boolean = true): Promise<Blob> => {
     const dateText = report.createdAt?.toDate ? report.createdAt.toDate().toLocaleString('pt-BR') : 'Processando...';
 
     let defaultTitle = `Relatório #${sequentialId}`;
@@ -119,15 +130,14 @@ export const generatePdfBlob = (report: Report, sequentialId: number, includeIma
         const imgSize = 58;
         const spacing = 5;
 
-        report.imageUrls.forEach((url, idx) => {
-            // This is a synchronous call in a simplified scenario. 
-            // In a real browser app, we might need to pre-load images as base64 or use a plugin.
-            // jspdf supports adding images by URL if they are already in cache or local.
-            // For Firebase storage URLs, we might need to handle CORS and loading.
+        for (let i = 0; i < report.imageUrls.length; i++) {
+            const url = report.imageUrls[i];
             try {
-                doc.addImage(url, 'JPEG', imgX, imgY, imgSize, imgSize);
+                // Convert to base64 first to ensure it's loaded and CORS is handled via fetch
+                const base64 = await getBase64FromUrl(url);
+                doc.addImage(base64, 'JPEG', imgX, imgY, imgSize, imgSize);
             } catch (e) {
-                console.error('Erro ao adicionar imagem ao PDF:', e);
+                console.error(`Erro ao adicionar imagem ${i} ao PDF:`, e);
             }
 
             imgX += imgSize + spacing;
@@ -135,62 +145,90 @@ export const generatePdfBlob = (report: Report, sequentialId: number, includeIma
                 imgX = 15;
                 imgY += imgSize + spacing;
             }
-            if (imgY > 240 && idx < report.imageUrls!.length - 1) {
+            if (imgY > 240 && i < report.imageUrls.length - 1) {
                 doc.addPage();
                 imgY = 20;
                 imgX = 15;
             }
-        });
+        }
     }
 
     return doc.output('blob');
 };
 
 export const shareReport = async (report: Report, sequentialId: number, includeImages: boolean = true) => {
-    let defaultTitle = `Relatório #${sequentialId}`;
-    if (report.type === 'inventory') defaultTitle = `Inventário #${sequentialId}`;
-    if (report.type === 'delivery') defaultTitle = `Entrega #${sequentialId}`;
-    if (report.type === 'tested') defaultTitle = `Testados #${sequentialId}`;
+    const loadingToast = toast.loading('Gerando PDF para compartilhar...');
+    
+    try {
+        let defaultTitle = `Relatório #${sequentialId}`;
+        if (report.type === 'inventory') defaultTitle = `Inventário #${sequentialId}`;
+        if (report.type === 'delivery') defaultTitle = `Entrega #${sequentialId}`;
+        if (report.type === 'tested') defaultTitle = `Testados #${sequentialId}`;
 
-    const reportTitle = report.title || defaultTitle;
-    const dateText = report.createdAt?.toDate ? report.createdAt.toDate().toLocaleString('pt-BR') : 'Processando...';
+        const reportTitle = report.title || defaultTitle;
+        const dateText = report.createdAt?.toDate ? report.createdAt.toDate().toLocaleString('pt-BR') : 'Processando...';
 
-    // Sanitize the title to be used as a filename (remove invalid characters)
-    const sanitizedTitle = reportTitle.replace(/[^a-z0-9]/gi, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
+        // Sanitize the title to be used as a filename (remove invalid characters)
+        const sanitizedTitle = reportTitle.replace(/[^a-z0-9]/gi, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
 
-    const pdfBlob = generatePdfBlob(report, sequentialId, includeImages);
-    const pdfFile = new File([pdfBlob], `${sanitizedTitle}.pdf`, { type: 'application/pdf' });
+        const pdfBlob = await generatePdfBlob(report, sequentialId, includeImages);
+        const pdfFile = new File([pdfBlob], `${sanitizedTitle}.pdf`, { type: 'application/pdf' });
 
-    const shareText = `📊 *${reportTitle}*\n📅 *Data:* ${dateText}\n📝 *Itens:* ${report.totalItems}`;
+        const shareText = `📊 *${reportTitle}*\n📅 *Data:* ${dateText}\n📝 *Itens:* ${report.totalItems}`;
 
-    if (navigator.share && navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
-        try {
-            await navigator.share({
-                files: [pdfFile],
-                title: reportTitle,
-                text: shareText
-            });
-        } catch (error: any) {
-            if (error.name !== 'AbortError') {
-                toast.error('Erro ao compartilhar relatório');
-                console.error(error);
+        toast.dismiss(loadingToast);
+
+        if (navigator.share && navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
+            try {
+                await navigator.share({
+                    files: [pdfFile],
+                    title: reportTitle,
+                    text: shareText
+                });
+            } catch (error: any) {
+                if (error.name !== 'AbortError') {
+                    // Fallback para compartilhar apenas o texto se falhar com arquivo (ex: timeout de permissão ou limitação do OS)
+                    try {
+                        await navigator.share({ title: reportTitle, text: shareText });
+                    } catch (fallbackError: any) {
+                        if (fallbackError.name !== 'AbortError') {
+                            toast.error('Erro ao compartilhar relatório');
+                            console.error('Erro de fallback do share:', fallbackError);
+                        }
+                    }
+                }
+            }
+        } else if (navigator.share) {
+            try {
+                await navigator.share({
+                    title: reportTitle,
+                    text: shareText
+                });
+            } catch (error: any) {
+                if (error.name !== 'AbortError') {
+                    toast.error('Erro ao compartilhar texto');
+                    console.error(error);
+                }
+            }
+        } else {
+            if (navigator.clipboard) {
+                try {
+                    await navigator.clipboard.writeText(shareText);
+                    toast.success('Informações copiadas para a área de transferência!');
+                } catch (e) {
+                    toast.error('Acesso exclusivo ao clipboard falhou.');
+                }
+            } else {
+                toast.error('Compartilhamento não suportado neste dispositivo.');
             }
         }
-    } else if (navigator.share) {
-        try {
-            await navigator.share({
-                title: reportTitle,
-                text: shareText
-            });
-        } catch (error) {
-            toast.error('Erro ao compartilhar texto');
-            console.error(error);
-        }
-    } else {
-        await navigator.clipboard.writeText(shareText);
-        toast.success('Informações copiadas para a área de transferência!');
+    } catch (error) {
+        toast.dismiss(loadingToast);
+        toast.error('Erro ao gerar relatório');
+        console.error(error);
     }
 };
+
 
 export const printWebReport = (report: Report, sequentialId: number, includeImages: boolean = true) => {
     const printWindow = window.open('', '_blank');
