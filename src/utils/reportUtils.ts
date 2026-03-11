@@ -208,9 +208,32 @@ export const shareReport = async (report: Report, sequentialId: number, includeI
                     toast.error('Erro ao compartilhar texto. O dispositivo pode não suportar ou restringiu o app.');
                 }
             }
-        } else {
+        } else if (navigator.clipboard) {
             await navigator.clipboard.writeText(shareText);
             toast.success('Informações copiadas para a área de transferência!');
+        } else {
+            // Em conexões não-HTTPS (como acesso via IP local), navigator.clipboard pode ser undefined.
+            // Usamos a técnica de fallback com textarea.
+            const textArea = document.createElement("textarea");
+            textArea.value = shareText;
+            textArea.style.top = "0";
+            textArea.style.left = "0";
+            textArea.style.position = "fixed";
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+            
+            try {
+                const successful = document.execCommand('copy');
+                if (successful) {
+                    toast.success('Informações copiadas para a área de transferência!');
+                } else {
+                    toast.error('Seu navegador bloqueou a cópia do texto.');
+                }
+            } catch (err) {
+                toast.error('Erro ao copiar texto no seu navegador.');
+            }
+            document.body.removeChild(textArea);
         }
     } catch (error) {
         toast.dismiss(loadingToast);
