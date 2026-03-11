@@ -413,6 +413,36 @@ const Inventario = () => {
         printWebReport(report, printId);
     };
 
+    const handleLocationChange = (newLocationId: string) => {
+        setSelectedLocationId(newLocationId);
+
+        if (reportItems.length > 0) {
+            let previousReport: Report | undefined;
+
+            if (currentReport && !currentReport.id.startsWith('unified-')) {
+                const currentReportCreatedAt = currentReport.createdAt?.toDate ? currentReport.createdAt.toDate().getTime() : Date.now();
+                previousReport = reports.find(r =>
+                    r.locationId === newLocationId &&
+                    r.id !== currentReport.id &&
+                    (r.createdAt?.toDate ? r.createdAt.toDate().getTime() : 0) < currentReportCreatedAt
+                );
+            } else {
+                previousReport = reports.find(r => r.locationId === newLocationId);
+            }
+
+            const updatedItems = reportItems.map(item => {
+                let previousCount = 0;
+                if (previousReport) {
+                    const prevItem = previousReport.items.find((i: any) => i.productId === item.productId || i.sku === item.sku);
+                    previousCount = prevItem ? prevItem.currentCount : 0;
+                }
+                return { ...item, previousCount };
+            });
+
+            setReportItems(updatedItems);
+        }
+    };
+
     return (
         <div className="p-4 md:p-8 max-w-full mx-auto">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
@@ -679,7 +709,7 @@ const Inventario = () => {
                                 />
                                 <select
                                     value={selectedLocationId}
-                                    onChange={(e) => setSelectedLocationId(e.target.value)}
+                                    onChange={(e) => handleLocationChange(e.target.value)}
                                     className="w-full md:w-auto bg-slate-100 dark:bg-slate-800 border border-emerald-500/30 rounded-lg px-4 py-2 text-slate-700 dark:text-slate-300 font-bold focus:ring-2 focus:ring-emerald-500 outline-none"
                                 >
                                     <option value="" disabled>Selecione um Local</option>
