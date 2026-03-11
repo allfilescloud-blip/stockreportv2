@@ -189,8 +189,9 @@ export const shareReport = async (report: Report, sequentialId: number, includeI
 
         toast.dismiss(loadingToast);
 
-        if (navigator.share && navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
+        if (navigator.share) {
             try {
+                // Tenta compartilhar com o arquivo PDF (mesmo se canShare for indefinido em algumas WebViews)
                 await navigator.share({
                     files: [pdfFile],
                     title: reportTitle,
@@ -198,33 +199,25 @@ export const shareReport = async (report: Report, sequentialId: number, includeI
                 });
             } catch (error: any) {
                 if (error.name !== 'AbortError') {
-                    console.error("Erro na API de Web Share (Native):", error);
-                    toast.error(
-                        includeImages 
-                            ? 'O arquivo gerado ficou muito grande para este aparelho compartilhar. Tente enviar selecionando "Sem imagens"!' 
-                            : 'Erro ao compartilhar com a aplicação escolhida. Tente copiar o link ou enviar novamente.',
-                        { duration: 6000 }
-                    );
-                }
-            }
-        } else if (navigator.share) {
-            try {
-                await navigator.share({
-                    title: reportTitle,
-                    text: shareText
-                });
-            } catch (error: any) {
-                if (error.name !== 'AbortError') {
-                    console.error("Erro no Share de Texto:", error);
-                    toast.error('Erro ao compartilhar texto. O dispositivo pode não suportar ou restringiu o app.');
+                    console.error("Erro no Share com Arquivo, tentando apenas texto:", error);
+                    try {
+                        // Fallback 1: Compartilhar apenas o texto se o arquivo for rejeitado pelo SO
+                        await navigator.share({
+                            title: reportTitle,
+                            text: shareText
+                        });
+                    } catch (textError: any) {
+                        if (textError.name !== 'AbortError') {
+                            toast.error('Erro ao compartilhar. O dispositivo pode não suportar ou restringiu o app.');
+                        }
+                    }
                 }
             }
         } else if (navigator.clipboard) {
             await navigator.clipboard.writeText(shareText);
             toast.success('Informações copiadas para a área de transferência!');
         } else {
-            // Em conexões não-HTTPS (como acesso via IP local), navigator.clipboard pode ser undefined.
-            // Usamos a técnica de fallback com textarea.
+            // ... fallback do textarea (mantido)
             const textArea = document.createElement("textarea");
             textArea.value = shareText;
             textArea.style.top = "0";
