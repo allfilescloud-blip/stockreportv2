@@ -315,6 +315,12 @@ const Entregas = () => {
     };
 
     const handleShare = async (report: Report, printId: number) => {
+        const isMobile = window.innerWidth < 768;
+        if (isMobile) {
+            await shareReport(report, printId, false);
+            return;
+        }
+
         if (report.imageUrls && report.imageUrls.length > 0) {
             setReportToShare(report);
             setPrintIdToShare(printId);
@@ -325,6 +331,12 @@ const Entregas = () => {
     };
 
     const handlePrintReport = (report: Report, printId: number) => {
+        const isMobile = window.innerWidth < 768;
+        if (isMobile) {
+            printWebReport(report, printId, false);
+            return;
+        }
+
         if (report.type === 'delivery' && report.imageUrls && report.imageUrls.length > 0) {
             setReportToPrint(report);
             setPrintIdToPrint(printId);
