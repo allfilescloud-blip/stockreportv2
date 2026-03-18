@@ -74,9 +74,6 @@ const Entregas = () => {
     const [showPrintConfirm, setShowPrintConfirm] = useState(false);
     const [reportToPrint, setReportToPrint] = useState<Report | null>(null);
     const [printIdToPrint, setPrintIdToPrint] = useState<number>(0);
-    const [showShareConfirm, setShowShareConfirm] = useState(false);
-    const [reportToShare, setReportToShare] = useState<Report | null>(null);
-    const [printIdToShare, setPrintIdToShare] = useState<number>(0);
 
     const { reports, loading } = useReports<Report>('delivery', filterDate);
     const { user } = useAuth();
@@ -314,20 +311,8 @@ const Entregas = () => {
         }
     };
 
-    const handleShare = async (report: Report, printId: number) => {
-        const isMobile = window.innerWidth < 768;
-        if (isMobile) {
-            await shareReport(report, printId, false);
-            return;
-        }
-
-        if (report.imageUrls && report.imageUrls.length > 0) {
-            setReportToShare(report);
-            setPrintIdToShare(printId);
-            setShowShareConfirm(true);
-        } else {
-            await shareReport(report, printId, false);
-        }
+    const handleShare = (report: Report, printId: number) => {
+        shareReport(report, printId, false, false);
     };
 
     const handlePrintReport = (report: Report, printId: number) => {
@@ -1235,53 +1220,7 @@ const Entregas = () => {
                 </div>
             )}
 
-            {/* Modal de Confirmação de Compartilhamento Condicional */}
-            {showShareConfirm && reportToShare && (
-                <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-                    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl animate-in fade-in zoom-in duration-200">
-                        <div className="p-6 text-center">
-                            <div className="w-16 h-16 bg-emerald-500/10 text-emerald-500 rounded-full flex items-center justify-center mx-auto mb-4">
-                                <Share2 size={32} />
-                            </div>
-                            <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Compartilhar Imagens?</h2>
-                            <p className="text-slate-500 dark:text-slate-400 mb-6 text-sm">
-                                Este relatório contém imagens anexadas. Incluí-las pode gerar um arquivo grande, o que em alguns celulares pode falhar ao compartilhar. Deseja enviá-las junto com o PDF?
-                            </p>
-                            <div className="flex flex-col gap-3">
-                                <button
-                                    onClick={() => {
-                                        shareReport(reportToShare, printIdToShare, true);
-                                        setShowShareConfirm(false);
-                                        setReportToShare(null);
-                                    }}
-                                    className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-xl transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2"
-                                >
-                                    <ImageIcon size={18} /> Sim, incluir imagens
-                                </button>
-                                <button
-                                    onClick={() => {
-                                        shareReport(reportToShare, printIdToShare, false);
-                                        setShowShareConfirm(false);
-                                        setReportToShare(null);
-                                    }}
-                                    className="w-full bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white font-bold py-3 rounded-xl transition-all hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-95"
-                                >
-                                    Não, compartilhar apenas texto do relatório
-                                </button>
-                                <button
-                                    onClick={() => {
-                                        setShowShareConfirm(false);
-                                        setReportToShare(null);
-                                    }}
-                                    className="w-full py-2 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-white font-semibold transition-colors"
-                                >
-                                    Cancelar
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
+
         </div>
     );
 };

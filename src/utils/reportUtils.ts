@@ -36,6 +36,9 @@ const getBase64FromUrl = async (url: string): Promise<string> => {
     });
 };
 
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+
 export const generatePdfBlob = async (report: Report, sequentialId: number, includeImages: boolean = true): Promise<Blob> => {
     const dateText = report.createdAt?.toDate ? report.createdAt.toDate().toLocaleString('pt-BR') : new Date().toLocaleString('pt-BR');
 
@@ -45,7 +48,80 @@ export const generatePdfBlob = async (report: Report, sequentialId: number, incl
     if (report.type === 'tested') defaultTitle = `Testados #${sequentialId}`;
 
     const reportTitle = report.title || defaultTitle;
+    const sortedItems = [...report.items].sort((a, b) => a.sku.localeCompare(b.sku, undefined, { numeric: true, sensitivity: 'base' }));
 
+    // ---------------------------------------------------------------------------
+    // ABORDAGEM 1: SEM IMAGENS -> Usa jsPDF nativo + autoTable (Rápido e leve, não trava celular)
+    // ---------------------------------------------------------------------------
+    if (!includeImages) {
+        const doc = new jsPDF();
+        
+        // Título e sub-cabeçalhos
+        doc.setFontSize(18);
+        doc.text(reportTitle, 14, 20);
+        
+        doc.setFontSize(11);
+        doc.setTextColor(100);
+        let currentY = 28;
+        if (report.type === 'inventory' && report.locationName) {
+            doc.text(`Local: ${report.locationName}`, 14, currentY);
+            currentY += 6;
+        }
+        doc.text(`Data: ${dateText}`, 14, currentY);
+        doc.text(`Total de Itens: ${report.totalItems}`, 140, currentY);
+        currentY += 10;
+
+        if (report.notes) {
+            doc.text(`Observações: ${report.notes}`, 14, currentY);
+            currentY += 10;
+        }
+
+        // Configurar colunas da tabela conforme o tipo
+        let head = [[] as string[]];
+        let body = [] as any[];
+
+        if (report.type === 'inventory') {
+            head[0] = ['SKU', 'Descrição', 'Anterior', 'Atual', 'Diferença'];
+            body = sortedItems.map(item => {
+                const prev = item.previousCount || 0;
+                const diff = item.currentCount - prev;
+                return [item.sku, item.description, prev.toString(), item.currentCount.toString(), diff > 0 ? `+${diff}` : diff.toString()];
+            });
+        } else if (report.type === 'tested') {
+            head[0] = ['SKU', 'Descrição', 'Qtd Restante', 'Qtd Testada'];
+            body = sortedItems.map(item => [item.sku, item.description, (item.previousCount || 0).toString(), item.currentCount.toString()]);
+        } else if (report.type === 'delivery') {
+            head[0] = ['SKU', 'Descrição', 'Qtd (Recebida)'];
+            body = sortedItems.map(item => [item.sku, item.description, item.currentCount.toString()]);
+        }
+
+        autoTable(doc, {
+            startY: currentY,
+            head: head,
+            body: body,
+            theme: 'grid',
+            headStyles: { fillColor: [226, 232, 240], textColor: [51, 51, 51], fontStyle: 'bold' },
+            didParseCell: function (data) {
+                // Pintar coluna de diferença (Inventário) de verde ou vermelho
+                if (report.type === 'inventory' && data.section === 'body' && data.column.index === 4) {
+                    const diffText = data.cell.raw as string;
+                    if (diffText.startsWith('+')) {
+                        data.cell.styles.textColor = [0, 128, 0];
+                        data.cell.styles.fontStyle = 'bold';
+                    } else if (diffText.startsWith('-')) {
+                        data.cell.styles.textColor = [255, 0, 0];
+                        data.cell.styles.fontStyle = 'bold';
+                    }
+                }
+            }
+        });
+
+        return doc.output('blob');
+    }
+
+    // ---------------------------------------------------------------------------
+    // ABORDAGEM 2: COM IMAGENS -> Usa html2pdf.js com renderização HTML (Mais pesado)
+    // ---------------------------------------------------------------------------
     let tableHeaders = '';
     if (report.type === 'inventory') {
         tableHeaders = `<th>SKU</th><th>Descrição</th><th>Anterior</th><th>Atual</th><th>Diferença</th>`;
@@ -54,8 +130,6 @@ export const generatePdfBlob = async (report: Report, sequentialId: number, incl
     } else if (report.type === 'delivery') {
         tableHeaders = `<th>SKU</th><th>Descrição</th><th>Quantidade (Recebida)</th>`;
     }
-
-    const sortedItems = [...report.items].sort((a, b) => a.sku.localeCompare(b.sku, undefined, { numeric: true, sensitivity: 'base' }));
 
     let tableBody = '';
     sortedItems.forEach(item => {
@@ -93,7 +167,7 @@ export const generatePdfBlob = async (report: Report, sequentialId: number, incl
         }
     });
 
-    const notesHtml = (report.type === 'delivery' && report.notes)
+    const notesHtml = report.notes
         ? `<div style="margin-top: 15px; padding-top: 10px; border-top: 1px dotted #ccc;">
                <strong>Observações:</strong> ${report.notes}
            </div>`
@@ -104,7 +178,7 @@ export const generatePdfBlob = async (report: Report, sequentialId: number, incl
         : '';
 
     let imagesHtml = '';
-    if (includeImages && report.type === 'delivery' && report.imageUrls && report.imageUrls.length > 0) {
+    if (report.imageUrls && report.imageUrls.length > 0) {
         imagesHtml = `<div style="margin-top: 30px; border-top: 2px solid #333; padding-top: 20px; page-break-before: always;">
                <h3 style="margin-bottom: 15px;">Imagens Anexadas</h3>
                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px;">`;
@@ -147,13 +221,13 @@ export const generatePdfBlob = async (report: Report, sequentialId: number, incl
 
     const element = document.createElement('div');
     element.innerHTML = htmlString;
-    document.body.appendChild(element); // Necessário para imagens renderizarem temporariamente no html2pdf
+    document.body.appendChild(element);
 
     const opt = {
         margin:       10,
         filename:     `${reportTitle}.pdf`,
         image:        { type: 'jpeg' as const, quality: 0.98 },
-        html2canvas:  { scale: 2, useCORS: true },
+        html2canvas:  { scale: window.innerWidth < 768 ? 1 : 2, useCORS: true }, // REDUZ A ESCALA NO MOBILE PARA EVITAR TRAVAMENTOS DE MEMÓRIA
         jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' as const }
     };
 
@@ -167,7 +241,42 @@ export const generatePdfBlob = async (report: Report, sequentialId: number, incl
     }
 };
 
-export const shareReport = async (report: Report, sequentialId: number, includeImages: boolean = true) => {
+export const shareTextReport = async (report: Report, sequentialId: number) => {
+    let defaultTitle = `Relatório #${sequentialId}`;
+    if (report.type === 'inventory') defaultTitle = `Inventário #${sequentialId}`;
+    if (report.type === 'delivery') defaultTitle = `Entrega #${sequentialId}`;
+    if (report.type === 'tested') defaultTitle = `Testados #${sequentialId}`;
+
+    const reportTitle = report.title || defaultTitle;
+    const dateText = report.createdAt?.toDate ? report.createdAt.toDate().toLocaleString('pt-BR') : new Date().toLocaleString('pt-BR');
+    
+    const shareText = `📊 *${reportTitle}*\n📅 *Data:* ${dateText}\n📝 *Itens:* ${report.totalItems}`;
+
+    if (navigator.share) {
+        try {
+            await navigator.share({
+                title: reportTitle,
+                text: shareText
+            });
+        } catch (error: any) {
+            if (error.name !== 'AbortError') {
+                if (navigator.clipboard) {
+                    await navigator.clipboard.writeText(shareText);
+                    toast.success('Resumo copiado para a área de transferência!');
+                } else {
+                    toast.error('O dispositivo recusou o compartilhamento de texto.');
+                }
+            }
+        }
+    } else if (navigator.clipboard) {
+        await navigator.clipboard.writeText(shareText);
+        toast.success('Resumo copiado para a área de transferência!');
+    } else {
+        toast.error('Não é possível compartilhar texto neste navegador.');
+    }
+};
+
+export const shareReport = async (report: Report, sequentialId: number, includeImages: boolean = true, forceDownload: boolean = false) => {
     const loadingToast = toast.loading('Gerando PDF para compartilhar...');
     
     try {
@@ -177,67 +286,91 @@ export const shareReport = async (report: Report, sequentialId: number, includeI
         if (report.type === 'tested') defaultTitle = `Testados #${sequentialId}`;
 
         const reportTitle = report.title || defaultTitle;
-        const dateText = report.createdAt?.toDate ? report.createdAt.toDate().toLocaleString('pt-BR') : 'Processando...';
 
         // Sanitize the title to be used as a filename (remove invalid characters)
         const sanitizedTitle = reportTitle.replace(/[^a-z0-9]/gi, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
 
         const pdfBlob = await generatePdfBlob(report, sequentialId, includeImages);
-        const pdfFile = new File([pdfBlob], `${sanitizedTitle}.pdf`, { type: 'application/pdf' });
-
-        const shareText = `📊 *${reportTitle}*\n📅 *Data:* ${dateText}\n📝 *Itens:* ${report.totalItems}`;
+        const pdfFile = new File([pdfBlob], `${sanitizedTitle}.pdf`, { 
+            type: 'application/pdf',
+            lastModified: new Date().getTime()
+        });
 
         toast.dismiss(loadingToast);
 
-        if (navigator.share) {
+        if (!forceDownload && navigator.share && navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
             try {
-                // Tenta compartilhar com o arquivo PDF (mesmo se canShare for indefinido em algumas WebViews)
+                // Passando APENAS o 'files' para o navegador abrir a Share Sheet forçando-a no modo Documento/Arquivo
+                // Evita problemas de intents (esquema) com o WhatsApp Android
                 await navigator.share({
-                    files: [pdfFile],
-                    title: reportTitle,
-                    text: shareText
+                    files: [pdfFile]
                 });
             } catch (error: any) {
                 if (error.name !== 'AbortError') {
-                    console.error("Erro no Share com Arquivo, tentando apenas texto:", error);
-                    try {
-                        // Fallback 1: Compartilhar apenas o texto se o arquivo for rejeitado pelo SO
-                        await navigator.share({
-                            title: reportTitle,
-                            text: shareText
-                        });
-                    } catch (textError: any) {
-                        if (textError.name !== 'AbortError') {
-                            toast.error('Erro ao compartilhar. O dispositivo pode não suportar ou restringiu o app.');
-                        }
-                    }
+                    console.error("Erro na API de Web Share (Native):", error);
+                    toast.error(
+                        includeImages 
+                            ? 'O arquivo gerado ficou muito grande para compartilhar. Tente selecionar "Sem imagens"!' 
+                            : 'Erro ao compartilhar com a aplicação escolhida.',
+                        { duration: 6000 }
+                    );
                 }
             }
-        } else if (navigator.clipboard) {
-            await navigator.clipboard.writeText(shareText);
-            toast.success('Informações copiadas para a área de transferência!');
         } else {
-            // ... fallback do textarea (mantido)
-            const textArea = document.createElement("textarea");
-            textArea.value = shareText;
-            textArea.style.top = "0";
-            textArea.style.left = "0";
-            textArea.style.position = "fixed";
-            document.body.appendChild(textArea);
-            textArea.focus();
-            textArea.select();
+            // Se o navegador não suporta compartilhamento de arquivos via File API,
+            // então fazemos o download direto do PDF (Adicionado suporte nativo de seleção de pasta se suportado).
+            try {
+                if ('showSaveFilePicker' in window) {
+                    const handle = await (window as any).showSaveFilePicker({
+                        suggestedName: `${sanitizedTitle}.pdf`,
+                        types: [{
+                            description: 'Documento PDF',
+                            accept: { 'application/pdf': ['.pdf'] }
+                        }]
+                    });
+                    const writable = await handle.createWritable();
+                    await writable.write(pdfBlob);
+                    await writable.close();
+                    toast.success('PDF salvo com sucesso na pasta selecionada!');
+                } else {
+                    // Fallback para download padrão na pasta Transferências
+                    toast.success('Iniciando o download do PDF...', { icon: '⬇️' });
+                    const url = URL.createObjectURL(pdfBlob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `${sanitizedTitle}.pdf`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                }
+            } catch (err: any) {
+                if (err.name !== 'AbortError') {
+                    console.error("Erro ao salvar arquivo:", err);
+                    
+                    // Último fallback incondicional caso o seletor falhe
+                    toast.success('Iniciando o download do PDF...', { icon: '⬇️' });
+                    const url = URL.createObjectURL(pdfBlob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `${sanitizedTitle}.pdf`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                }
+            }
             
             try {
-                const successful = document.execCommand('copy');
-                if (successful) {
-                    toast.success('Informações copiadas para a área de transferência!');
-                } else {
-                    toast.error('Seu navegador bloqueou a cópia do texto.');
+                const dateText = report.createdAt?.toDate ? report.createdAt.toDate().toLocaleString('pt-BR') : new Date().toLocaleString('pt-BR');
+                const shareText = `📊 *${reportTitle}*\n📅 *Data:* ${dateText}\n📝 *Itens:* ${report.totalItems}`;
+                if (navigator.clipboard) {
+                    await navigator.clipboard.writeText(shareText);
+                    toast.success('Resumo copiado! Se desejar, cole-o no corpo da mensagem ao enviar.');
                 }
             } catch (err) {
-                toast.error('Erro ao copiar texto no seu navegador.');
+                // ignorar
             }
-            document.body.removeChild(textArea);
         }
     } catch (error) {
         toast.dismiss(loadingToast);
