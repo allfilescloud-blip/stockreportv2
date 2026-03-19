@@ -12,10 +12,9 @@ import {
 } from 'firebase/firestore';
 import { db, storage } from '../db/firebase';
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
-import { Search, Plus, Printer, Trash2, Edit2, X, AlertTriangle, Share2, ClipboardList, Eye, Calculator, Layers, ScanBarcode, StopCircle, Image as ImageIcon, ChevronLeft, ChevronRight, Upload } from 'lucide-react';
+import { Plus, Printer, Trash2, Edit2, X, AlertTriangle, Share2, ClipboardList, Eye, Calculator, Layers, Image as ImageIcon, ChevronLeft, ChevronRight, Upload } from 'lucide-react';
 import { shareReport, printWebReport } from '../utils/reportUtils';
-import { ScannerModal } from '../components/ScannerModal';
-import { useProducts } from '../contexts/ProductsContext';
+import { ProductPicker } from '../components/operational/ProductPicker';
 import { useReports } from '../hooks/useReports';
 import { useAuth } from '../hooks/useAuth';
 import { ReportSkeleton } from '../components/ReportSkeleton';
@@ -43,9 +42,7 @@ interface Report {
 
 const Entregas = () => {
     const [isModalOpen, setIsModalOpen] = useState(false);
-    const { products: allProducts } = useProducts();
     const [searchTerm, setSearchTerm] = useState('');
-    const [products, setProducts] = useState<any[]>([]);
     const [reportItems, setReportItems] = useState<ReportItem[]>([]);
     const [selectedProduct, setSelectedProduct] = useState<any>(null);
     const [quantity, setQuantity] = useState<number | string>('');
@@ -62,7 +59,6 @@ const Entregas = () => {
     const [showReportDeleteConfirm, setShowReportDeleteConfirm] = useState(false);
     const [reportIdToDelete, setReportIdToDelete] = useState<string | null>(null);
     const [selectedReports, setSelectedReports] = useState<string[]>([]);
-    const [isScanning, setIsScanning] = useState(false);
     const [tempImages, setTempImages] = useState<File[]>([]);
     const [isCarouselOpen, setIsCarouselOpen] = useState(false);
     const [carouselImages, setCarouselImages] = useState<string[]>([]);
@@ -95,35 +91,7 @@ const Entregas = () => {
     const quantityInputRef = useRef<HTMLInputElement>(null);
     const sumInputRef = useRef<HTMLInputElement>(null);
 
-    const startScanner = () => setIsScanning(true);
-
-    const handleScan = (decodedText: string) => {
-        const found = allProducts.find(p => p.sku.toLowerCase() === decodedText.toLowerCase() || (p.ean && p.ean.toLowerCase() === decodedText.toLowerCase()));
-        if (found) {
-            setSelectedProduct(found);
-            setSearchTerm('');
-            setProducts([]);
-            setTimeout(() => quantityInputRef.current?.focus(), 10);
-        } else {
-            handleSearchProduct(decodedText);
-        }
-    };
-
-    const handleSearchProduct = (term: string) => {
-        setSearchTerm(term);
-        if (term.length < 2) {
-            setProducts([]);
-            return;
-        }
-        const results = allProducts
-            .filter((p: any) =>
-                p.status === 'active' &&
-                (p.sku.toLowerCase().includes(term.toLowerCase()) ||
-                    p.description.toLowerCase().includes(term.toLowerCase()))
-            )
-            .slice(0, 10);
-        setProducts(results);
-    };
+    // Handlers substituídos pelo ProductPicker
 
     const addItemToReport = () => {
         if (!selectedProduct) return;
@@ -146,7 +114,6 @@ const Entregas = () => {
         setSelectedProduct(null);
         setSearchTerm('');
         setQuantity('');
-        setProducts([]);
         skuInputRef.current?.focus();
     };
 
@@ -204,7 +171,6 @@ const Entregas = () => {
             setSelectedProduct(null);
             setSearchTerm('');
             setQuantity('');
-            setProducts([]);
             setShowConfirmModal(false);
             setDuplicateItemIndex(null);
             skuInputRef.current?.focus();
@@ -652,65 +618,19 @@ const Entregas = () => {
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-white/50 dark:bg-slate-900/50 p-4 rounded-xl border border-slate-200 dark:border-slate-800">
                                 <div className="md:col-span-2 relative">
                                     <label className="block text-xs font-semibold text-slate-500 uppercase mb-2 ml-1">Produto</label>
-                                    <div className="relative">
-                                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
-                                        <input
-                                            type="text"
-                                            ref={skuInputRef}
-                                            autoFocus
-                                            className="w-full pl-10 pr-4 py-3 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white focus:ring-2 focus:ring-purple-500 outline-none transition-all"
-                                            value={selectedProduct ? `${selectedProduct.sku} - ${selectedProduct.description}` : searchTerm}
-                                            onChange={(e) => !selectedProduct && handleSearchProduct(e.target.value)}
-                                            readOnly={!!selectedProduct}
-                                            placeholder="Inserir SKU"
-                                        />
-                                        <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
-                                            {(selectedProduct || searchTerm) && (
-                                                <button
-                                                    onClick={() => {
-                                                        setSelectedProduct(null);
-                                                        setSearchTerm('');
-                                                        setProducts([]);
-                                                        skuInputRef.current?.focus();
-                                                    }}
-                                                    className="text-slate-500 hover:text-slate-900 dark:text-white p-1"
-                                                >
-                                                    <X size={18} />
-                                                </button>
-                                            )}
-                                            <button
-                                                onClick={isScanning ? () => setIsScanning(false) : startScanner}
-                                                className="text-slate-500 hover:text-purple-500 dark:hover:text-purple-400 p-1 bg-white dark:bg-slate-800 rounded-lg shadow-sm ml-1"
-                                            >
-                                                {isScanning ? <StopCircle size={20} /> : <ScanBarcode size={20} />}
-                                            </button>
-                                        </div>
-                                    </div>
-
-                                    <ScannerModal
-                                        isOpen={isScanning}
-                                        onClose={() => setIsScanning(false)}
-                                        onScan={handleScan}
+                                    <ProductPicker
+                                        selectedProduct={selectedProduct}
+                                        onSelectProduct={(p: any) => {
+                                            setSelectedProduct(p);
+                                            if (p) {
+                                                setTimeout(() => quantityInputRef.current?.focus(), 10);
+                                            }
+                                        }}
+                                        searchTerm={searchTerm}
+                                        onSearchChange={setSearchTerm}
+                                        themeColor="purple"
+                                        inputRef={skuInputRef}
                                     />
-
-                                    {products.length > 0 && !selectedProduct && (
-                                        <div className="absolute z-10 w-full mt-1 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg shadow-xl max-h-48 overflow-y-auto border-t-0 rounded-t-none">
-                                            {products.map(p => (
-                                                <div
-                                                    key={p.id}
-                                                    onClick={() => {
-                                                        setSelectedProduct(p);
-                                                        setProducts([]);
-                                                        setTimeout(() => quantityInputRef.current?.focus(), 10);
-                                                    }}
-                                                    className="p-3 hover:bg-slate-200 dark:bg-slate-700 cursor-pointer border-b border-slate-300 dark:border-slate-700 last:border-0"
-                                                >
-                                                    <p className="font-mono text-purple-400 text-sm">{p.sku}</p>
-                                                    <p className="text-slate-700 dark:text-slate-300 text-xs truncate">{p.description}</p>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    )}
                                 </div>
 
                                 <div className="md:w-32">

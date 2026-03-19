@@ -2,7 +2,6 @@ import { useState, useEffect, useRef } from 'react';
 import {
     collection,
     addDoc,
-    onSnapshot,
     query,
     updateDoc,
     doc,
@@ -10,13 +9,13 @@ import {
     serverTimestamp,
     deleteDoc,
     getDoc,
+    onSnapshot,
 } from 'firebase/firestore';
 import { db } from '../db/firebase';
-import { Search, Plus, Printer, Trash2, Edit2, X, AlertTriangle, Share2, ClipboardList, Calculator, ScanBarcode, StopCircle, Layers, MapPin } from 'lucide-react';
+import { Plus, Trash2, MapPin, Calculator, ClipboardList, X, AlertTriangle, Share2, Printer, Layers, Edit2 } from 'lucide-react';
 import { shareReport, printWebReport } from '../utils/reportUtils';
-import { ScannerModal } from '../components/ScannerModal';
+import { ProductPicker } from '../components/operational/ProductPicker';
 import toast from 'react-hot-toast';
-import { useProducts } from '../contexts/ProductsContext';
 import { useReports } from '../hooks/useReports';
 import { useAuth } from '../hooks/useAuth';
 import { ReportSkeleton } from '../components/ReportSkeleton';
@@ -55,8 +54,6 @@ const Inventario = () => {
     const [selectedLocationId, setSelectedLocationId] = useState('');
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
-    const { products: allProducts } = useProducts();
-    const [products, setProducts] = useState<any[]>([]);
     const [reportItems, setReportItems] = useState<ReportItem[]>([]);
     const [selectedProduct, setSelectedProduct] = useState<any>(null);
     const [quantity, setQuantity] = useState<number | string>('');
@@ -74,7 +71,6 @@ const Inventario = () => {
     const [itemIndexToDelete, setItemIndexToDelete] = useState<number | null>(null);
     const [showReportDeleteConfirm, setShowReportDeleteConfirm] = useState(false);
     const [reportIdToDelete, setReportIdToDelete] = useState<string | null>(null);
-    const [isScanning, setIsScanning] = useState(false);
 
     const { reports, loading } = useReports<Report>('inventory', filterDate, filterLocation);
     const { user } = useAuth();
@@ -109,34 +105,7 @@ const Inventario = () => {
         };
     }, []);
 
-    const startScanner = () => setIsScanning(true);
-
-    const handleScan = (decodedText: string) => {
-        const found = allProducts.find(p => p.sku.toLowerCase() === decodedText.toLowerCase() || (p.ean && p.ean.toLowerCase() === decodedText.toLowerCase()));
-        if (found) {
-            setSelectedProduct(found);
-            setSearchTerm('');
-            setProducts([]);
-            setTimeout(() => quantityInputRef.current?.focus(), 10);
-        } else {
-            handleSearchProduct(decodedText);
-        }
-    };
-
-    const handleSearchProduct = (term: string) => {
-        setSearchTerm(term);
-        if (term.length < 1) {
-            setProducts([]);
-            return;
-        }
-
-        const results = allProducts.filter((p: any) =>
-            p.sku.toLowerCase().includes(term.toLowerCase()) ||
-            p.description.toLowerCase().includes(term.toLowerCase())
-        ).slice(0, 10);
-
-        setProducts(results);
-    };
+    // Helper functions removed as they are now handled by ProductPicker
 
     const addItemToReport = async () => {
         if (!selectedProduct) return;
@@ -187,7 +156,6 @@ const Inventario = () => {
         setSelectedProduct(null);
         setSearchTerm('');
         setQuantity('');
-        setProducts([]);
         skuInputRef.current?.focus();
     };
 
@@ -209,7 +177,6 @@ const Inventario = () => {
             setSelectedProduct(null);
             setSearchTerm('');
             setQuantity('');
-            setProducts([]);
             setShowConfirmModal(false);
             setDuplicateItemIndex(null);
             skuInputRef.current?.focus();
@@ -326,7 +293,6 @@ const Inventario = () => {
         setTitle('');
         setSelectedLocationId('');
         setCurrentReport(null);
-        setIsScanning(false);
         toast.success("Inventário salvo com sucesso!");
     };
 
@@ -406,7 +372,7 @@ const Inventario = () => {
     };
 
     const handleShare = async (report: Report, printId: number) => {
-        await shareReport(report, printId);
+        await shareReport(report, printId, false, false);
     };
 
     const handlePrintReport = (report: Report, printId: number) => {
@@ -727,66 +693,19 @@ const Inventario = () => {
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-white/50 dark:bg-slate-900/50 p-4 rounded-xl border border-slate-200 dark:border-slate-800">
                                 <div className="md:col-span-2 relative">
                                     <label className="block text-xs font-semibold text-slate-500 uppercase mb-2 ml-1">Produto (SKU ou Descrição)</label>
-                                    <div className="relative">
-                                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
-                                        <input
-                                            type="text"
-                                            ref={skuInputRef}
-                                            autoFocus
-                                            placeholder="Inserir SKU ou Descrição"
-                                            className="w-full pl-10 pr-20 py-3 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white focus:ring-2 focus:ring-emerald-500 outline-none"
-                                            value={selectedProduct ? `${selectedProduct.sku} - ${selectedProduct.description}` : searchTerm}
-                                            onChange={(e) => !selectedProduct && handleSearchProduct(e.target.value)}
-                                            readOnly={!!selectedProduct}
-                                        />
-                                        <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
-                                            {(selectedProduct || searchTerm) && (
-                                                <button
-                                                    onClick={() => {
-                                                        setSelectedProduct(null);
-                                                        setSearchTerm('');
-                                                        setProducts([]);
-                                                        skuInputRef.current?.focus();
-                                                    }}
-                                                    className="text-slate-500 hover:text-slate-900 dark:text-white p-1"
-                                                >
-                                                    <X size={18} />
-                                                </button>
-                                            )}
-                                            <button
-                                                onClick={isScanning ? () => setIsScanning(false) : startScanner}
-                                                className="text-slate-500 hover:text-emerald-500 dark:hover:text-emerald-400 p-1 bg-white dark:bg-slate-800 rounded-lg shadow-sm ml-1"
-                                                title={isScanning ? "Parar Scanner" : "Ler Código"}
-                                            >
-                                                {isScanning ? <StopCircle size={20} /> : <ScanBarcode size={20} />}
-                                            </button>
-                                        </div>
-                                    </div>
-
-                                    <ScannerModal
-                                        isOpen={isScanning}
-                                        onClose={() => setIsScanning(false)}
-                                        onScan={handleScan}
+                                    <ProductPicker
+                                        selectedProduct={selectedProduct}
+                                        onSelectProduct={(p) => {
+                                            setSelectedProduct(p);
+                                            if (p) {
+                                                setTimeout(() => quantityInputRef.current?.focus(), 10);
+                                            }
+                                        }}
+                                        searchTerm={searchTerm}
+                                        onSearchChange={setSearchTerm}
+                                        themeColor="emerald"
+                                        inputRef={skuInputRef}
                                     />
-
-                                    {products.length > 0 && !selectedProduct && (
-                                        <div className="absolute z-10 w-full mt-1 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg shadow-xl max-h-48 overflow-y-auto">
-                                            {products.map(p => (
-                                                <div
-                                                    key={p.id}
-                                                    onClick={() => {
-                                                        setSelectedProduct(p);
-                                                        setProducts([]);
-                                                        setTimeout(() => quantityInputRef.current?.focus(), 10);
-                                                    }}
-                                                    className="p-3 hover:bg-slate-200 dark:bg-slate-700 cursor-pointer border-b border-slate-300 dark:border-slate-700 last:border-0"
-                                                >
-                                                    <p className="font-mono text-emerald-400 text-sm">{p.sku}</p>
-                                                    <p className="text-slate-700 dark:text-slate-300 text-xs truncate">{p.description}</p>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    )}
                                 </div>
 
                                 <div className="md:w-32">

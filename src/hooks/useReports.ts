@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { collection, query, orderBy, limit, onSnapshot } from 'firebase/firestore';
+import { collection, query, orderBy, limit, onSnapshot, where } from 'firebase/firestore';
 import { db } from '../db/firebase';
 
 interface UseReportsResult<T> {
@@ -11,17 +11,18 @@ export const useReports = <T extends { id: string; type: string; createdAt: any;
     type: string,
     filterDate: string,
     filterLocation?: string,
-    queryLimit: number = 200
+    queryLimit: number = 50
 ): UseReportsResult<T> => {
     const [reports, setReports] = useState<T[]>([]);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
         setLoading(true);
-        // Removemos o 'where' temporariamente para evitar o erro de índice composto
-        // No futuro, após criar o índice, podemos voltar a filtrar no servidor por performance
+        // Utilizando filtro nativo por tipo e limite para reduzir uso de banda e memória.
+        // Necessário criar índice composto no Firebase: type (ASC) + createdAt (DESC)
         const q = query(
             collection(db, 'reports'),
+            where('type', '==', type),
             orderBy('createdAt', 'desc'),
             limit(queryLimit)
         );
@@ -29,10 +30,8 @@ export const useReports = <T extends { id: string; type: string; createdAt: any;
         const unsubscribe = onSnapshot(q, (snapshot) => {
             const allReps = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as unknown as T));
 
-            // Filtramos no cliente por tipo e data (e location se existir)
+            // Filtramos no cliente apenas data e localização para manter flexibilidade sem precisar de múltiplos indíces complexos
             const filteredReports = allReps.filter(r => {
-                if (r.type !== type) return false;
-
                 if (filterDate) {
                     const reportDate = r.createdAt?.toDate ? r.createdAt.toDate().toLocaleDateString('en-CA') : '';
                     if (reportDate !== filterDate) return false;
