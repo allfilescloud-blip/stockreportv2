@@ -1,4 +1,3 @@
-import html2pdf from 'html2pdf.js';
 import toast from 'react-hot-toast';
 
 export interface ReportItem {
@@ -50,195 +49,133 @@ export const generatePdfBlob = async (report: Report, sequentialId: number, incl
     const reportTitle = report.title || defaultTitle;
     const sortedItems = [...report.items].sort((a, b) => a.sku.localeCompare(b.sku, undefined, { numeric: true, sensitivity: 'base' }));
 
-    // ---------------------------------------------------------------------------
-    // ABORDAGEM 1: SEM IMAGENS -> Usa jsPDF nativo + autoTable (Rápido e leve, não trava celular)
-    // ---------------------------------------------------------------------------
-    if (!includeImages) {
-        const doc = new jsPDF();
-        
-        // Título e sub-cabeçalhos
-        doc.setFontSize(18);
-        doc.text(reportTitle, 14, 20);
-        
-        doc.setFontSize(11);
-        doc.setTextColor(100);
-        let currentY = 28;
-        if (report.type === 'inventory' && report.locationName) {
-            doc.text(`Local: ${report.locationName}`, 14, currentY);
-            currentY += 6;
-        }
-        doc.text(`Data: ${dateText}`, 14, currentY);
-        doc.text(`Total de Itens: ${report.totalItems}`, 140, currentY);
+    const doc = new jsPDF();
+    
+    // Título e sub-cabeçalhos
+    doc.setFontSize(18);
+    doc.text(reportTitle, 14, 20);
+    
+    doc.setFontSize(11);
+    doc.setTextColor(100);
+    let currentY = 28;
+    if (report.type === 'inventory' && report.locationName) {
+        doc.text(`Local: ${report.locationName}`, 14, currentY);
+        currentY += 6;
+    }
+    doc.text(`Data: ${dateText}`, 14, currentY);
+    doc.text(`Total de Itens: ${report.totalItems}`, 140, currentY);
+    currentY += 10;
+
+    if (report.notes) {
+        doc.text(`Observações: ${report.notes}`, 14, currentY);
         currentY += 10;
-
-        if (report.notes) {
-            doc.text(`Observações: ${report.notes}`, 14, currentY);
-            currentY += 10;
-        }
-
-        // Configurar colunas da tabela conforme o tipo
-        let head = [[] as string[]];
-        let body = [] as any[];
-
-        if (report.type === 'inventory') {
-            head[0] = ['SKU', 'Descrição', 'Anterior', 'Atual', 'Diferença'];
-            body = sortedItems.map(item => {
-                const prev = item.previousCount || 0;
-                const diff = item.currentCount - prev;
-                return [item.sku, item.description, prev.toString(), item.currentCount.toString(), diff > 0 ? `+${diff}` : diff.toString()];
-            });
-        } else if (report.type === 'tested') {
-            head[0] = ['SKU', 'Descrição', 'Qtd Restante', 'Qtd Testada'];
-            body = sortedItems.map(item => [item.sku, item.description, (item.previousCount || 0).toString(), item.currentCount.toString()]);
-        } else if (report.type === 'delivery') {
-            head[0] = ['SKU', 'Descrição', 'Qtd (Recebida)'];
-            body = sortedItems.map(item => [item.sku, item.description, item.currentCount.toString()]);
-        }
-
-        autoTable(doc, {
-            startY: currentY,
-            head: head,
-            body: body,
-            theme: 'grid',
-            headStyles: { fillColor: [226, 232, 240], textColor: [51, 51, 51], fontStyle: 'bold' },
-            didParseCell: function (data) {
-                // Pintar coluna de diferença (Inventário) de verde ou vermelho
-                if (report.type === 'inventory' && data.section === 'body' && data.column.index === 4) {
-                    const diffText = data.cell.raw as string;
-                    if (diffText.startsWith('+')) {
-                        data.cell.styles.textColor = [0, 128, 0];
-                        data.cell.styles.fontStyle = 'bold';
-                    } else if (diffText.startsWith('-')) {
-                        data.cell.styles.textColor = [255, 0, 0];
-                        data.cell.styles.fontStyle = 'bold';
-                    }
-                }
-            }
-        });
-
-        return doc.output('blob');
     }
 
-    // ---------------------------------------------------------------------------
-    // ABORDAGEM 2: COM IMAGENS -> Usa html2pdf.js com renderização HTML (Mais pesado)
-    // ---------------------------------------------------------------------------
-    let tableHeaders = '';
+    // Configurar colunas da tabela conforme o tipo
+    let head = [[] as string[]];
+    let body = [] as any[];
+
     if (report.type === 'inventory') {
-        tableHeaders = `<th>SKU</th><th>Descrição</th><th>Anterior</th><th>Atual</th><th>Diferença</th>`;
-    } else if (report.type === 'tested') {
-        tableHeaders = `<th>SKU</th><th>Descrição</th><th>Quantidade Restante</th><th>Quantidade Testada</th>`;
-    } else if (report.type === 'delivery') {
-        tableHeaders = `<th>SKU</th><th>Descrição</th><th>Quantidade (Recebida)</th>`;
-    }
-
-    let tableBody = '';
-    sortedItems.forEach(item => {
-        if (report.type === 'inventory') {
+        head[0] = ['SKU', 'Descrição', 'Anterior', 'Atual', 'Diferença'];
+        body = sortedItems.map(item => {
             const prev = item.previousCount || 0;
             const diff = item.currentCount - prev;
-            const diffClass = diff > 0 ? 'diff-pos' : diff < 0 ? 'diff-neg' : '';
-            tableBody += `
-                <tr>
-                    <td>${item.sku}</td>
-                    <td>${item.description}</td>
-                    <td>${prev}</td>
-                    <td>${item.currentCount}</td>
-                    <td class="${diffClass}">${diff > 0 ? '+' : ''}${diff}</td>
-                </tr>
-            `;
-        } else if (report.type === 'tested') {
-            const prev = item.previousCount || 0;
-            tableBody += `
-                <tr>
-                    <td>${item.sku}</td>
-                    <td>${item.description}</td>
-                    <td>${prev}</td>
-                    <td>${item.currentCount}</td>
-                </tr>
-            `;
-        } else if (report.type === 'delivery') {
-            tableBody += `
-                <tr>
-                    <td>${item.sku}</td>
-                    <td>${item.description}</td>
-                    <td>${item.currentCount}</td>
-                </tr>
-            `;
+            return [item.sku, item.description, prev.toString(), item.currentCount.toString(), diff > 0 ? `+${diff}` : diff.toString()];
+        });
+    } else if (report.type === 'tested') {
+        head[0] = ['SKU', 'Descrição', 'Qtd Restante', 'Qtd Testada'];
+        body = sortedItems.map(item => [item.sku, item.description, (item.previousCount || 0).toString(), item.currentCount.toString()]);
+    } else if (report.type === 'delivery') {
+        head[0] = ['SKU', 'Descrição', 'Qtd (Recebida)'];
+        body = sortedItems.map(item => [item.sku, item.description, item.currentCount.toString()]);
+    }
+
+    autoTable(doc, {
+        startY: currentY,
+        head: head,
+        body: body,
+        theme: 'grid',
+        headStyles: { fillColor: [226, 232, 240], textColor: [51, 51, 51], fontStyle: 'bold' },
+        didParseCell: function (data) {
+            // Pintar coluna de diferença (Inventário) de verde ou vermelho
+            if (report.type === 'inventory' && data.section === 'body' && data.column.index === 4) {
+                const diffText = data.cell.raw as string;
+                if (diffText.startsWith('+')) {
+                    data.cell.styles.textColor = [0, 128, 0];
+                    data.cell.styles.fontStyle = 'bold';
+                } else if (diffText.startsWith('-')) {
+                    data.cell.styles.textColor = [255, 0, 0];
+                    data.cell.styles.fontStyle = 'bold';
+                }
+            }
         }
     });
 
-    const notesHtml = report.notes
-        ? `<div style="margin-top: 15px; padding-top: 10px; border-top: 1px dotted #ccc;">
-               <strong>Observações:</strong> ${report.notes}
-           </div>`
-        : '';
+    if (includeImages && report.imageUrls && report.imageUrls.length > 0) {
+        let finalY = (doc as any).lastAutoTable.finalY + 15;
+        const pageWidth = doc.internal.pageSize.width;
+        const pageHeight = doc.internal.pageSize.height;
+        
+        if (finalY > pageHeight - 20) {
+            doc.addPage();
+            finalY = 20;
+        }
 
-    const locationHtml = (report.type === 'inventory' && report.locationName)
-        ? `<p style="margin: 5px 0 0 0; color: #555;"><strong>Local:</strong> ${report.locationName}</p>`
-        : '';
+        doc.setFontSize(14);
+        doc.setTextColor(51, 51, 51);
+        doc.text('Imagens Anexadas', 14, finalY);
+        finalY += 10;
 
-    let imagesHtml = '';
-    if (report.imageUrls && report.imageUrls.length > 0) {
-        imagesHtml = `<div style="margin-top: 30px; border-top: 2px solid #333; padding-top: 20px; page-break-before: always;">
-               <h3 style="margin-bottom: 15px;">Imagens Anexadas</h3>
-               <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px;">`;
+        const margin = 14;
+        const imgWidth = (pageWidth - margin * 3) / 2; // Duas colunas
+        const maxImgHeight = 85;
 
+        let col = 0;
         for (const url of report.imageUrls) {
             try {
                 const base64 = await getBase64FromUrl(url);
-                imagesHtml += `<img src="${base64}" style="width: 100%; height: 250px; object-fit: contain; border-radius: 8px; border: 1px solid #ddd;" />`;
+                const img = new Image();
+                img.src = base64;
+                await new Promise((resolve, reject) => { 
+                    img.onload = resolve; 
+                    img.onerror = reject;
+                });
+
+                const ratio = img.width / img.height;
+                let renderWidth = imgWidth;
+                let renderHeight = renderWidth / ratio;
+
+                if (renderHeight > maxImgHeight) {
+                    renderHeight = maxImgHeight;
+                    renderWidth = renderHeight * ratio;
+                }
+
+                if (finalY + renderHeight > pageHeight - 15) {
+                    doc.addPage();
+                    finalY = 20;
+                    col = 0;
+                }
+
+                const xPos = col === 0 ? margin : margin * 2 + imgWidth;
+                
+                // Centrar horizontalmente na coluna se a imagem ficou mais estreita
+                const offsetX = xPos + (imgWidth - renderWidth) / 2;
+
+                doc.addImage(base64, 'JPEG', offsetX, finalY, renderWidth, renderHeight);
+
+                col++;
+                if (col > 1) {
+                    col = 0;
+                    // movemos o Y pelo tamanho máximo desenhado na linha original (usando maxImgHeight como safe net)
+                    finalY += renderHeight + 10;
+                }
             } catch (e) {
-                console.error('Erro ao converter imagem:', e);
+                console.error('Erro ao processar imagem para o PDF nativo:', e);
             }
         }
-        imagesHtml += `</div></div>`;
     }
 
-    const htmlString = `
-        <div style="font-family: sans-serif; padding: 20px; color: #333; max-width: 800px; margin: 0 auto;">
-            <div style="display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #333; padding-bottom: 10px;">
-                <div>
-                    <h1 style="margin-bottom: 5px;">${reportTitle}</h1>
-                    ${locationHtml}
-                    <p style="margin-top: 5px;">Data: ${dateText}</p>
-                </div>
-                <div style="text-align: right">
-                    <p>Total de Itens: ${report.totalItems}</p>
-                </div>
-            </div>
-            ${notesHtml}
-            <table style="width: 100%; border-collapse: collapse; margin-top: 20px;">
-                <thead>
-                    <tr>${tableHeaders.replace(/<th>/g, '<th style="background-color: #e2e8f0; border: 1px solid #ddd; padding: 12px; text-align: left;">')}</tr>
-                </thead>
-                <tbody>
-                    ${tableBody.replace(/<td>/g, '<td style="border: 1px solid #ddd; padding: 12px; text-align: left;">').replace(/<td class="diff-pos">/g, '<td style="border: 1px solid #ddd; padding: 12px; text-align: left; color: green; font-weight: bold;">').replace(/<td class="diff-neg">/g, '<td style="border: 1px solid #ddd; padding: 12px; text-align: left; color: red; font-weight: bold;">')}
-                </tbody>
-            </table>
-            ${imagesHtml}
-        </div>
-    `;
-
-    const element = document.createElement('div');
-    element.innerHTML = htmlString;
-    document.body.appendChild(element);
-
-    const opt = {
-        margin:       10,
-        filename:     `${reportTitle}.pdf`,
-        image:        { type: 'jpeg' as const, quality: 0.98 },
-        html2canvas:  { scale: window.innerWidth < 768 ? 1 : 2, useCORS: true }, // REDUZ A ESCALA NO MOBILE PARA EVITAR TRAVAMENTOS DE MEMÓRIA
-        jsPDF:        { unit: 'mm', format: 'a4', orientation: 'portrait' as const }
-    };
-
-    try {
-        const pdfBlob = await html2pdf().set(opt).from(element).output('blob');
-        document.body.removeChild(element);
-        return pdfBlob;
-    } catch (e) {
-        document.body.removeChild(element);
-        throw e;
-    }
+    return doc.output('blob');
 };
 
 export const shareTextReport = async (report: Report, sequentialId: number) => {
@@ -333,31 +270,21 @@ export const shareReport = async (report: Report, sequentialId: number, includeI
                     await writable.close();
                     toast.success('PDF salvo com sucesso na pasta selecionada!');
                 } else {
-                    // Fallback para download padrão na pasta Transferências
-                    toast.success('Iniciando o download do PDF...', { icon: '⬇️' });
+                    // Fallback para abrir o PDF nativamente em nova aba no celular
+                    toast.success('Abrindo PDF...', { icon: '📄' });
                     const url = URL.createObjectURL(pdfBlob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = `${sanitizedTitle}.pdf`;
-                    document.body.appendChild(a);
-                    a.click();
-                    document.body.removeChild(a);
-                    URL.revokeObjectURL(url);
+                    window.open(url, '_blank');
+                    setTimeout(() => URL.revokeObjectURL(url), 60000); // limpeza
                 }
             } catch (err: any) {
                 if (err.name !== 'AbortError') {
                     console.error("Erro ao salvar arquivo:", err);
                     
-                    // Último fallback incondicional caso o seletor falhe
-                    toast.success('Iniciando o download do PDF...', { icon: '⬇️' });
+                    // Último fallback incondicional
+                    toast.success('Abrindo PDF...', { icon: '📄' });
                     const url = URL.createObjectURL(pdfBlob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = `${sanitizedTitle}.pdf`;
-                    document.body.appendChild(a);
-                    a.click();
-                    document.body.removeChild(a);
-                    URL.revokeObjectURL(url);
+                    window.open(url, '_blank');
+                    setTimeout(() => URL.revokeObjectURL(url), 60000); // limpeza
                 }
             }
             

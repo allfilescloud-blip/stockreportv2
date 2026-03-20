@@ -15,6 +15,7 @@ import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage
 import { Plus, Printer, Trash2, Edit2, X, AlertTriangle, Share2, ClipboardList, Eye, Calculator, Layers, Image as ImageIcon, ChevronLeft, ChevronRight, Upload } from 'lucide-react';
 import { shareReport, printWebReport } from '../utils/reportUtils';
 import { ProductPicker } from '../components/operational/ProductPicker';
+import { compressImage } from '../utils/imageUtils';
 import { useReports } from '../hooks/useReports';
 import { useAuth } from '../hooks/useAuth';
 import { ReportSkeleton } from '../components/ReportSkeleton';
@@ -70,6 +71,9 @@ const Entregas = () => {
     const [showPrintConfirm, setShowPrintConfirm] = useState(false);
     const [reportToPrint, setReportToPrint] = useState<Report | null>(null);
     const [printIdToPrint, setPrintIdToPrint] = useState<number>(0);
+    const [showShareConfirm, setShowShareConfirm] = useState(false);
+    const [reportToShare, setReportToShare] = useState<Report | null>(null);
+    const [printIdToShare, setPrintIdToShare] = useState<number>(0);
 
     const { reports, loading } = useReports<Report>('delivery', filterDate);
     const { user } = useAuth();
@@ -184,10 +188,17 @@ const Entregas = () => {
         const uploadedUrls: string[] = [...(currentReport?.imageUrls || [])];
 
         for (const file of tempImages) {
-            const imageRef = ref(storage, `delivery_images/${user?.uid}/${reportId}/${Date.now()}_${file.name}`);
-            const snapshot = await uploadBytes(imageRef, file);
-            const url = await getDownloadURL(snapshot.ref);
-            uploadedUrls.push(url);
+            try {
+                // Compress image before upload (max width 1280px, 70% quality)
+                const compressedFile = await compressImage(file, 1280, 0.7);
+                const imageRef = ref(storage, `delivery_images/${user?.uid}/${reportId}/${Date.now()}_${compressedFile.name}`);
+                const snapshot = await uploadBytes(imageRef, compressedFile);
+                const url = await getDownloadURL(snapshot.ref);
+                uploadedUrls.push(url);
+            } catch (error) {
+                console.error("Erro ao comprimir/subir imagem:", error);
+                alert(`Erro ao processar a imagem ${file.name}. Ela pode ter sido ignorada.`);
+            }
         }
 
         setIsUploading(false);
@@ -278,16 +289,16 @@ const Entregas = () => {
     };
 
     const handleShare = (report: Report, printId: number) => {
-        shareReport(report, printId, false, false);
+        if (report.type === 'delivery' && report.imageUrls && report.imageUrls.length > 0) {
+            setReportToShare(report);
+            setPrintIdToShare(printId);
+            setShowShareConfirm(true);
+        } else {
+            shareReport(report, printId, false, false);
+        }
     };
 
     const handlePrintReport = (report: Report, printId: number) => {
-        const isMobile = window.innerWidth < 768;
-        if (isMobile) {
-            printWebReport(report, printId, false);
-            return;
-        }
-
         if (report.type === 'delivery' && report.imageUrls && report.imageUrls.length > 0) {
             setReportToPrint(report);
             setPrintIdToPrint(printId);
@@ -1129,6 +1140,54 @@ const Entregas = () => {
                                     onClick={() => {
                                         setShowPrintConfirm(false);
                                         setReportToPrint(null);
+                                    }}
+                                    className="w-full py-2 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-white font-semibold transition-colors"
+                                >
+                                    Cancelar
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Modal de Confirmação de Compartilhamento Condicional */}
+            {showShareConfirm && reportToShare && (
+                <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+                    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl animate-in fade-in zoom-in duration-200">
+                        <div className="p-6 text-center">
+                            <div className="w-16 h-16 bg-blue-500/10 text-blue-500 rounded-full flex items-center justify-center mx-auto mb-4">
+                                <Share2 size={32} />
+                            </div>
+                            <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Compartilhar com Imagens?</h2>
+                            <p className="text-slate-500 dark:text-slate-400 mb-6 text-sm">
+                                Este relatório contém imagens anexadas. Deseja incluí-las na geração do PDF para compartilhamento?
+                            </p>
+                            <div className="flex flex-col gap-3">
+                                <button
+                                    onClick={() => {
+                                        shareReport(reportToShare, printIdToShare, true, false);
+                                        setShowShareConfirm(false);
+                                        setReportToShare(null);
+                                    }}
+                                    className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2"
+                                >
+                                    <ImageIcon size={18} /> Sim, enviar com imagens
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        shareReport(reportToShare, printIdToShare, false, false);
+                                        setShowShareConfirm(false);
+                                        setReportToShare(null);
+                                    }}
+                                    className="w-full bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white font-bold py-3 rounded-xl transition-all hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-95"
+                                >
+                                    Não, apenas o relatório
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        setShowShareConfirm(false);
+                                        setReportToShare(null);
                                     }}
                                     className="w-full py-2 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-white font-semibold transition-colors"
                                 >
