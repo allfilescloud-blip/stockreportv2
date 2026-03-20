@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef } from 'react';
 import { Search, X, ScanBarcode, StopCircle } from 'lucide-react';
 import { useProducts } from '../../contexts/ProductsContext';
 import { ScannerModal } from '../ScannerModal';
