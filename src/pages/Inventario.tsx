@@ -684,7 +684,7 @@ const Inventario = () => {
                                     ))}
                                 </select>
                             </div>
-                            <button onClick={() => { setIsModalOpen(false); setReportItems([]); setTitle(''); setSelectedLocationId(''); setCurrentReport(null); setIsScanning(false); }} className="absolute md:static top-4 right-4 md:top-auto md:right-auto text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-white shrink-0">
+                            <button onClick={() => { setIsModalOpen(false); setReportItems([]); setTitle(''); setSelectedLocationId(''); setCurrentReport(null); }} className="absolute md:static top-4 right-4 md:top-auto md:right-auto text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-white shrink-0">
                                 <X size={24} />
                             </button>
                         </div>
