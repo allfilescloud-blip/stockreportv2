@@ -1,4 +1,0 @@
-﻿src/pages/Dashboard.tsx(33,32): error TS2304: Cannot find name 'collection'.
-src/pages/Dashboard.tsx(35,59): error TS2698: Spread types may only be created from object types.
-src/pages/Dashboard.tsx(44,13): error TS2304: Cannot find name 'collection'.
-src/pages/Dashboard.tsx(54,30): error TS2571: Object is of type 'unknown'.

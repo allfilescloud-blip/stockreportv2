@@ -1,1 +1,0 @@
-﻿src/pages/Configuracoes.tsx(2,56): error TS6133: 'Database' is declared but its value is never read.
