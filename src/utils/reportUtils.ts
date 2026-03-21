@@ -429,6 +429,13 @@ export const printWebReport = (report: Report, sequentialId: number, includeImag
                     </tbody>
                 </table>
                 ${imagesHtml}
+                <script>
+                    window.onload = function() {
+                        setTimeout(function() {
+                            window.print();
+                        }, 250);
+                    };
+                </script>
             </body>
         </html>
     `;
@@ -436,7 +443,4 @@ export const printWebReport = (report: Report, sequentialId: number, includeImag
     printWindow.document.write(html);
     printWindow.document.close();
     printWindow.focus();
-    setTimeout(() => {
-        printWindow.print();
-    }, 250);
 };
