@@ -340,6 +340,12 @@ const Entregas = () => {
 
         const mergedItems = Array.from(mergedItemsMap.values());
 
+        const unifiedNames = reportsToMerge.map(r => {
+            const index = reports.findIndex(orig => orig.id === r.id);
+            const displayId = r.sequentialId || (reports.length - index);
+            return r.title || `Entrega #${displayId}`;
+        });
+
         const mergedReport: Report = {
             id: 'unified-' + Date.now().toString(),
             type: 'delivery',
@@ -348,7 +354,7 @@ const Entregas = () => {
             items: mergedItems,
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
-            notes: 'Este é um relatório unificado de múltiplas entregas selecionadas no painel. Contém a soma dos SKUs de cada entrega.',
+            notes: `Relatório de entregas unificadas. Origens consolidadas: ${unifiedNames.join(' | ')}`,
         };
 
         handlePrintReport(mergedReport, 0); // O sequentialId 0 vai forçar o uso de report.title
