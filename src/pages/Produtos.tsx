@@ -517,7 +517,6 @@ const Produtos = () => {
                                         {getSortIcon('sku')}
                                     </div>
                                 </th>
-                                <th className="px-6 py-4 font-semibold text-nowrap">Modelo</th>
                                 <th className="px-6 py-4 font-semibold text-nowrap">EAN</th>
                                 <th
                                     className="px-6 py-4 font-semibold w-full cursor-pointer transition-colors group"
@@ -528,6 +527,7 @@ const Produtos = () => {
                                         {getSortIcon('description')}
                                     </div>
                                 </th>
+                                <th className="px-6 py-4 font-semibold text-nowrap">Modelo</th>
                                 <th className="px-6 py-4 font-semibold">Status</th>
                                 <th className="px-6 py-4 font-semibold text-right">Ações</th>
                             </tr>
@@ -536,16 +536,6 @@ const Produtos = () => {
                             {filteredProducts.map((product: Product) => (
                                 <tr key={product.id} className="hover:bg-slate-100/30 dark:bg-slate-800/30 transition-colors">
                                     <td className="px-6 py-4 font-mono text-blue-400 text-nowrap text-sm">{product.sku}</td>
-                                    <td className="px-6 py-4 font-mono text-slate-500 dark:text-slate-400 text-nowrap text-xs">
-                                        <div className="flex items-center gap-2">
-                                            <span>{product.model || '-'}</span>
-                                            {product.model && (
-                                                <button onClick={() => handleCopy(product.model!, 'Modelo')} className="text-slate-400 hover:text-blue-500 transition-colors" title="Copiar Modelo">
-                                                    <Copy size={14} />
-                                                </button>
-                                            )}
-                                        </div>
-                                    </td>
                                     <td className="px-6 py-4 font-mono text-slate-500 dark:text-slate-400 text-nowrap text-xs">
                                         <div className="flex items-center gap-2">
                                             <span>{product.ean || '-'}</span>
@@ -557,6 +547,16 @@ const Produtos = () => {
                                         </div>
                                     </td>
                                     <td className="px-6 py-4 text-slate-700 dark:text-slate-300 min-w-[150px] text-sm md:text-base">{product.description}</td>
+                                    <td className="px-6 py-4 font-mono text-slate-500 dark:text-slate-400 text-nowrap text-xs">
+                                        <div className="flex items-center gap-2">
+                                            <span>{product.model || '-'}</span>
+                                            {product.model && (
+                                                <button onClick={() => handleCopy(product.model!, 'Modelo')} className="text-slate-400 hover:text-blue-500 transition-colors" title="Copiar Modelo">
+                                                    <Copy size={14} />
+                                                </button>
+                                            )}
+                                        </div>
+                                    </td>
                                     <td className="px-6 py-4">
                                         <span className={`px-3 py-1 rounded-full text-xs font-medium ${product.status === 'active' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'
                                             }`}>
