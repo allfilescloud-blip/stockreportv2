@@ -1,0 +1,1 @@
+import{c as e}from"./index-BUxR_9g4.js";const o=[["path",{d:"M21 12a9 9 0 1 1-6.219-8.56",key:"13zald"}]],t=e("loader-circle",o);const a=[["path",{d:"m22 7-8.991 5.727a2 2 0 0 1-2.009 0L2 7",key:"132q7q"}],["rect",{x:"2",y:"4",width:"20",height:"16",rx:"2",key:"izxlao"}]],i=e("mail",a);export{t as L,i as M};
