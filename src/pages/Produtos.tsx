@@ -609,32 +609,31 @@ const Produtos = () => {
                     {filteredProducts.map((product: Product) => (
                         <div key={product.id} className="p-4 space-y-4 hover:bg-slate-100/20 dark:bg-slate-800/20 transition-colors">
                             <div className="flex justify-between items-start">
-                                <div className="space-y-1">
-                                    <p className="font-mono text-blue-400 font-bold">{product.sku}</p>
-                                    <div className="flex flex-col gap-1">
-                                        {product.model && (
-                                            <div className="flex items-center gap-2 text-slate-500 text-xs font-mono">
-                                                <span>Mod: {product.model}</span>
-                                                <button onClick={() => handleCopy(product.model!, 'Modelo')} className="text-slate-400 hover:text-blue-500"><Copy size={12} /></button>
-                                            </div>
-                                        )}
-                                        {product.ean && (
-                                            <div className="flex items-center gap-2 text-slate-500 text-xs font-mono">
-                                                <span>EAN: {product.ean}</span>
-                                                <button onClick={() => handleCopy(product.ean!, 'EAN')} className="text-slate-400 hover:text-blue-500"><Copy size={12} /></button>
-                                            </div>
-                                        )}
-                                        {!product.model && !product.ean && (
-                                            <p className="text-slate-500 text-xs font-mono">Sem Modelo nem EAN</p>
-                                        )}
-                                    </div>
-                                </div>
+                                <p className="font-mono text-blue-400 font-bold text-base">{product.sku}</p>
                                 <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${product.status === 'active' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}>
                                     {product.status === 'active' ? 'Ativo' : 'Inativo'}
                                 </span>
                             </div>
 
                             <p className="text-slate-700 dark:text-slate-300 text-sm leading-relaxed">{product.description}</p>
+
+                            <div className="flex flex-col gap-1.5 pt-1">
+                                {product.ean && (
+                                    <div className="flex items-center gap-2 text-slate-500 text-xs font-mono">
+                                        <span className="font-semibold">EAN:</span> <span>{product.ean}</span>
+                                        <button onClick={() => handleCopy(product.ean!, 'EAN')} className="text-slate-400 hover:text-blue-500 transition-colors"><Copy size={14} /></button>
+                                    </div>
+                                )}
+                                {product.model && (
+                                    <div className="flex items-center gap-2 text-slate-500 text-xs font-mono">
+                                        <span className="font-semibold">Mod:</span> <span>{product.model}</span>
+                                        <button onClick={() => handleCopy(product.model!, 'Modelo')} className="text-slate-400 hover:text-blue-500 transition-colors"><Copy size={14} /></button>
+                                    </div>
+                                )}
+                                {!product.model && !product.ean && (
+                                    <p className="text-slate-500 text-xs font-mono italic">Sem Modelo / EAN</p>
+                                )}
+                            </div>
 
                             <div className="flex items-center justify-between pt-2 border-t border-slate-200/50 dark:border-slate-800/50">
                                 <div className="flex gap-2">
