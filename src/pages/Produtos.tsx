@@ -11,7 +11,8 @@ import {
     where
 } from 'firebase/firestore';
 import { db } from '../db/firebase';
-import { Plus, Search, Edit2, History, X, Printer, Filter, Info, ScanBarcode, ChevronUp, ChevronDown, ChevronsUpDown, Share2 } from 'lucide-react';
+import { Plus, Search, Edit2, History, X, Printer, Filter, ScanBarcode, ChevronUp, ChevronDown, ChevronsUpDown, Share2, Copy } from 'lucide-react';
+import toast from 'react-hot-toast';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { useProducts } from '../contexts/ProductsContext';
@@ -46,8 +47,11 @@ const Produtos = () => {
 
     // Scanner states
     const [activeScanner, setActiveScanner] = useState<'ean' | 'model' | null>(null);
-
-
+    const handleCopy = (text: string, type: string) => {
+        if (!text || text === '-') return;
+        navigator.clipboard.writeText(text);
+        toast.success(`${type} copiado com sucesso!`, { icon: '📋' });
+    };
 
     const handleSubmit = async (e: FormEvent) => {
         e.preventDefault();
@@ -513,6 +517,7 @@ const Produtos = () => {
                                         {getSortIcon('sku')}
                                     </div>
                                 </th>
+                                <th className="px-6 py-4 font-semibold text-nowrap">Modelo</th>
                                 <th className="px-6 py-4 font-semibold text-nowrap">EAN</th>
                                 <th
                                     className="px-6 py-4 font-semibold w-full cursor-pointer transition-colors group"
@@ -531,7 +536,26 @@ const Produtos = () => {
                             {filteredProducts.map((product: Product) => (
                                 <tr key={product.id} className="hover:bg-slate-100/30 dark:bg-slate-800/30 transition-colors">
                                     <td className="px-6 py-4 font-mono text-blue-400 text-nowrap text-sm">{product.sku}</td>
-                                    <td className="px-6 py-4 font-mono text-slate-500 dark:text-slate-400 text-nowrap text-xs">{product.ean || '-'}</td>
+                                    <td className="px-6 py-4 font-mono text-slate-500 dark:text-slate-400 text-nowrap text-xs">
+                                        <div className="flex items-center gap-2">
+                                            <span>{product.model || '-'}</span>
+                                            {product.model && (
+                                                <button onClick={() => handleCopy(product.model!, 'Modelo')} className="text-slate-400 hover:text-blue-500 transition-colors" title="Copiar Modelo">
+                                                    <Copy size={14} />
+                                                </button>
+                                            )}
+                                        </div>
+                                    </td>
+                                    <td className="px-6 py-4 font-mono text-slate-500 dark:text-slate-400 text-nowrap text-xs">
+                                        <div className="flex items-center gap-2">
+                                            <span>{product.ean || '-'}</span>
+                                            {product.ean && (
+                                                <button onClick={() => handleCopy(product.ean!, 'EAN')} className="text-slate-400 hover:text-blue-500 transition-colors" title="Copiar EAN">
+                                                    <Copy size={14} />
+                                                </button>
+                                            )}
+                                        </div>
+                                    </td>
                                     <td className="px-6 py-4 text-slate-700 dark:text-slate-300 min-w-[150px] text-sm md:text-base">{product.description}</td>
                                     <td className="px-6 py-4">
                                         <span className={`px-3 py-1 rounded-full text-xs font-medium ${product.status === 'active' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'
@@ -541,11 +565,6 @@ const Produtos = () => {
                                     </td>
                                     <td className="px-6 py-4 text-right">
                                         <div className="flex justify-end gap-2 text-nowrap">
-                                            {product.model && (
-                                                <div className="p-2 text-blue-400" title={`Modelo: ${product.model}`}>
-                                                    <Info size={18} />
-                                                </div>
-                                            )}
                                             <button
                                                 onClick={() => handlePrintLabel(product)}
                                                 className="p-2 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-white hover:bg-slate-200 dark:bg-slate-700 rounded-lg transition-all"
@@ -592,7 +611,23 @@ const Produtos = () => {
                             <div className="flex justify-between items-start">
                                 <div className="space-y-1">
                                     <p className="font-mono text-blue-400 font-bold">{product.sku}</p>
-                                    <p className="text-slate-500 text-xs font-mono">{product.ean || 'Sem EAN'}</p>
+                                    <div className="flex flex-col gap-1">
+                                        {product.model && (
+                                            <div className="flex items-center gap-2 text-slate-500 text-xs font-mono">
+                                                <span>Mod: {product.model}</span>
+                                                <button onClick={() => handleCopy(product.model!, 'Modelo')} className="text-slate-400 hover:text-blue-500"><Copy size={12} /></button>
+                                            </div>
+                                        )}
+                                        {product.ean && (
+                                            <div className="flex items-center gap-2 text-slate-500 text-xs font-mono">
+                                                <span>EAN: {product.ean}</span>
+                                                <button onClick={() => handleCopy(product.ean!, 'EAN')} className="text-slate-400 hover:text-blue-500"><Copy size={12} /></button>
+                                            </div>
+                                        )}
+                                        {!product.model && !product.ean && (
+                                            <p className="text-slate-500 text-xs font-mono">Sem Modelo nem EAN</p>
+                                        )}
+                                    </div>
                                 </div>
                                 <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${product.status === 'active' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}>
                                     {product.status === 'active' ? 'Ativo' : 'Inativo'}
@@ -637,11 +672,6 @@ const Produtos = () => {
                                         Histórico
                                     </button>
                                 </div>
-                                {product.model && (
-                                    <div className="p-2 text-blue-400" title={`Modelo: ${product.model}`}>
-                                        <Info size={18} />
-                                    </div>
-                                )}
                             </div>
                         </div>
                     ))}
