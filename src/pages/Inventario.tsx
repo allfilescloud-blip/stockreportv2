@@ -72,6 +72,11 @@ const Inventario = () => {
     const [itemIndexToDelete, setItemIndexToDelete] = useState<number | null>(null);
     const [showReportDeleteConfirm, setShowReportDeleteConfirm] = useState(false);
     const [reportIdToDelete, setReportIdToDelete] = useState<string | null>(null);
+    const [minDivergence, setMinDivergence] = useState<number | null>(null);
+    const [maxDivergence, setMaxDivergence] = useState<number | null>(null);
+    const [lockLocation, setLockLocation] = useState(false);
+    const [showDivergenceModal, setShowDivergenceModal] = useState(false);
+    const [divergenceInfo, setDivergenceInfo] = useState<{ sku: string, diff: number, min?: number, max?: number, isUpdate: boolean } | null>(null);
 
     const { reports, loading } = useReports<Report>('inventory', filterDate, filterLocation);
     const { user } = useAuth();
@@ -82,7 +87,11 @@ const Inventario = () => {
             const loadOptions = async () => {
                 const optionsDoc = await getDoc(doc(db, 'users', user.uid, 'settings', 'general'));
                 if (optionsDoc.exists()) {
-                    setDisableDecimals(optionsDoc.data().disableDecimals || false);
+                    const data = optionsDoc.data();
+                    setDisableDecimals(data.disableDecimals || false);
+                    setLockLocation(data.lockLocation || false);
+                    setMinDivergence(data.minDivergence !== undefined && data.minDivergence !== '' ? Number(data.minDivergence) : null);
+                    setMaxDivergence(data.maxDivergence !== undefined && data.maxDivergence !== '' ? Number(data.maxDivergence) : null);
                 }
             };
             loadOptions();
@@ -108,7 +117,7 @@ const Inventario = () => {
 
     // Helper functions removed as they are now handled by ProductPicker
 
-    const addItemToReport = async () => {
+    const addItemToReport = async (force: boolean = false) => {
         if (!selectedProduct) return;
 
         const existingIndex = reportItems.findIndex(i => i.productId === selectedProduct.id);
@@ -145,11 +154,32 @@ const Inventario = () => {
             previousCount = prevItem ? prevItem.currentCount : 0;
         }
 
+        const currentCount = Number(quantity) || 0;
+        const diff = currentCount - previousCount;
+
+        // Verificar Divergência
+        if (!force) {
+            const isMinDivergent = minDivergence !== null && minDivergence !== 0 && diff < minDivergence;
+            const isMaxDivergent = maxDivergence !== null && maxDivergence !== 0 && diff > maxDivergence;
+
+            if (isMinDivergent || isMaxDivergent) {
+                setDivergenceInfo({
+                    sku: selectedProduct.sku,
+                    diff: diff,
+                    min: minDivergence || undefined,
+                    max: maxDivergence || undefined,
+                    isUpdate: false
+                });
+                setShowDivergenceModal(true);
+                return;
+            }
+        }
+
         const newItem: ReportItem = {
             productId: selectedProduct.id,
             sku: selectedProduct.sku,
             description: selectedProduct.description,
-            currentCount: Number(quantity) || 0,
+            currentCount: currentCount,
             previousCount: previousCount
         };
 
@@ -170,10 +200,31 @@ const Inventario = () => {
         }
     };
 
-    const confirmUpdate = () => {
+    const confirmUpdate = (force: boolean = false) => {
         if (duplicateItemIndex !== null) {
+            const item = reportItems[duplicateItemIndex];
+            const currentCount = Number(quantity) || 0;
+            const diff = currentCount - item.previousCount;
+
+            if (!force) {
+                const isMinDivergent = minDivergence !== null && minDivergence !== 0 && diff < minDivergence;
+                const isMaxDivergent = maxDivergence !== null && maxDivergence !== 0 && diff > maxDivergence;
+
+                if (isMinDivergent || isMaxDivergent) {
+                    setDivergenceInfo({
+                        sku: item.sku,
+                        diff: diff,
+                        min: minDivergence || undefined,
+                        max: maxDivergence || undefined,
+                        isUpdate: true
+                    });
+                    setShowDivergenceModal(true);
+                    return;
+                }
+            }
+
             const updatedItems = [...reportItems];
-            updatedItems[duplicateItemIndex].currentCount = Number(quantity) || 0;
+            updatedItems[duplicateItemIndex].currentCount = currentCount;
             setReportItems(updatedItems);
             setSelectedProduct(null);
             setSearchTerm('');
@@ -684,7 +735,8 @@ const Inventario = () => {
                                 <select
                                     value={selectedLocationId}
                                     onChange={(e) => handleLocationChange(e.target.value)}
-                                    className="w-full md:w-auto bg-slate-100 dark:bg-slate-800 border border-emerald-500/30 rounded-lg px-4 py-2 text-slate-700 dark:text-slate-300 font-bold focus:ring-2 focus:ring-emerald-500 outline-none"
+                                    disabled={lockLocation && (currentReport !== null || reportItems.length > 0)}
+                                    className={`w-full md:w-auto bg-slate-100 dark:bg-slate-800 border border-emerald-500/30 rounded-lg px-4 py-2 text-slate-700 dark:text-slate-300 font-bold focus:ring-2 focus:ring-emerald-500 outline-none ${lockLocation && (currentReport !== null || reportItems.length > 0) ? 'opacity-50 cursor-not-allowed' : ''}`}
                                 >
                                     <option value="" disabled>Selecione um Local</option>
                                     {locations.map(loc => (
@@ -707,6 +759,8 @@ const Inventario = () => {
                                             setSelectedProduct(p);
                                             if (p) {
                                                 setTimeout(() => quantityInputRef.current?.focus(), 10);
+                                            } else {
+                                                setQuantity('');
                                             }
                                         }}
                                         searchTerm={searchTerm}
@@ -729,11 +783,14 @@ const Inventario = () => {
                                                 if (disableDecimals && (e.key === '.' || e.key === ',')) {
                                                     e.preventDefault();
                                                 }
+                                                if (e.key === 'Enter' && selectedProduct && quantity !== '') {
+                                                    addItemToReport();
+                                                }
                                             }}
                                             onChange={(e) => setQuantity(e.target.value === '' ? '' : Number(e.target.value))}
                                         />
                                         <button
-                                            onClick={addItemToReport}
+                                            onClick={() => addItemToReport()}
                                             disabled={!selectedProduct || quantity === ''}
                                             className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed text-white p-3 rounded-lg transition-all"
                                         >
@@ -921,10 +978,65 @@ const Inventario = () => {
                                     Cancelar
                                 </button>
                                 <button
-                                    onClick={confirmUpdate}
+                                    onClick={() => confirmUpdate()}
                                     className="flex-1 bg-amber-600 hover:bg-amber-700 text-white font-bold py-3 rounded-xl transition-all shadow-lg active:scale-95"
                                 >
                                     Alterar
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Modal de Alerta de Divergência */}
+            {showDivergenceModal && divergenceInfo && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md">
+                    <div className="bg-white dark:bg-slate-900 border-2 border-amber-500/50 rounded-3xl w-full max-w-sm overflow-hidden shadow-2xl animate-in fade-in zoom-in duration-300">
+                        <div className="p-8 text-center">
+                            <div className="w-20 h-20 bg-amber-500/20 text-amber-500 rounded-full flex items-center justify-center mx-auto mb-6 animate-pulse">
+                                <AlertTriangle size={40} />
+                            </div>
+                            <h2 className="text-2xl font-black text-slate-900 dark:text-white mb-4 tracking-tight">Divergência Detectada!</h2>
+                            <div className="space-y-4 mb-8">
+                                <p className="text-slate-500 dark:text-slate-400 text-sm leading-relaxed">
+                                    O SKU <span className="font-mono font-bold text-amber-500">{divergenceInfo.sku}</span> apresenta uma diferença de <span className="font-bold text-slate-900 dark:text-white">{divergenceInfo.diff > 0 ? `+${divergenceInfo.diff}` : divergenceInfo.diff}</span> unidades.
+                                </p>
+                                <div className="p-4 bg-amber-500/5 rounded-2xl border border-amber-500/20">
+                                    <p className="text-[10px] font-bold uppercase text-amber-600 mb-1">Limites Configurados</p>
+                                    <div className="flex justify-center gap-4 text-xs font-bold text-slate-600 dark:text-slate-300">
+                                        <span>Mín: {divergenceInfo.min ?? '∞'}</span>
+                                        <div className="w-px h-3 bg-slate-300 dark:bg-slate-700" />
+                                        <span>Máx: {divergenceInfo.max ?? '∞'}</span>
+                                    </div>
+                                </div>
+                                <p className="text-slate-900 dark:text-white font-bold text-sm">
+                                    Por favor, realize uma nova conferência deste item antes de prosseguir.
+                                </p>
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <button
+                                    onClick={() => {
+                                        setShowDivergenceModal(false);
+                                        setDivergenceInfo(null);
+                                    }}
+                                    className="py-3.5 px-4 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold rounded-2xl transition-all active:scale-95 border border-slate-200 dark:border-slate-700"
+                                >
+                                    Revisar
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        setShowDivergenceModal(false);
+                                        if (divergenceInfo.isUpdate) {
+                                            confirmUpdate(true);
+                                        } else {
+                                            addItemToReport(true);
+                                        }
+                                        setDivergenceInfo(null);
+                                    }}
+                                    className="py-3.5 px-4 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-2xl transition-all shadow-lg shadow-amber-500/20 active:scale-95"
+                                >
+                                    Confirmar
                                 </button>
                             </div>
                         </div>

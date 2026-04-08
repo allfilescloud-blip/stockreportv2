@@ -1,0 +1,35 @@
+﻿src/contexts/ProductsContext.tsx(1,58): error TS1484: 'ReactNode' is a type and must be imported using a type-only import when 'verbatimModuleSyntax' is enabled.
+src/contexts/ProductsContext.tsx(2,41): error TS6133: 'where' is declared but its value is never read.
+src/pages/Entregas.tsx(18,1): error TS6133: 'toast' is declared but its value is never read.
+src/pages/Entregas.tsx(70,24): error TS2304: Cannot find name 'db'.
+src/pages/Entregas.tsx(178,29): error TS2304: Cannot find name 'db'.
+src/pages/Entregas.tsx(187,52): error TS2304: Cannot find name 'db'.
+src/pages/Entregas.tsx(207,33): error TS2304: Cannot find name 'db'.
+src/pages/Entregas.tsx(228,33): error TS2304: Cannot find name 'db'.
+src/pages/Inventario.tsx(13,5): error TS6133: 'getDocs' is declared but its value is never read.
+src/pages/Inventario.tsx(14,5): error TS6133: 'where' is declared but its value is never read.
+src/pages/Inventario.tsx(114,44): error TS2304: Cannot find name 'qLocs'.
+src/pages/Inventario.tsx(114,52): error TS7006: Parameter 'snapshot' implicitly has an 'any' type.
+src/pages/Inventario.tsx(115,44): error TS7006: Parameter 'doc' implicitly has an 'any' type.
+src/pages/Inventario.tsx(325,9): error TS2304: Cannot find name 'stopScanner'.
+src/pages/Inventario.tsx(341,19): error TS2304: Cannot find name 'deleteDoc'.
+src/pages/Inventario.tsx(660,162): error TS2304: Cannot find name 'stopScanner'.
+src/pages/Inventario.tsx(697,67): error TS2304: Cannot find name 'stopScanner'.
+src/pages/Produtos.tsx(1,20): error TS6133: 'useEffect' is declared but its value is never read.
+src/pages/Produtos.tsx(5,5): error TS6133: 'onSnapshot' is declared but its value is never read.
+src/pages/Produtos.tsx(7,5): error TS6133: 'orderBy' is declared but its value is never read.
+src/pages/Produtos.tsx(34,26): error TS2352: Conversion of type 'ProductsContextType' to type '{ products: Product[]; }' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  Types of property 'products' are incompatible.
+    Type 'Product[]' is not comparable to type 'Product[]'.
+      Type 'Product' is missing the following properties from type 'Product': status, history
+src/pages/Testados.tsx(19,1): error TS6133: 'toast' is declared but its value is never read.
+src/pages/Testados.tsx(91,32): error TS2304: Cannot find name 'setIsScanning'.
+src/pages/Testados.tsx(136,36): error TS2304: Cannot find name 'getDocs'.
+src/pages/Testados.tsx(137,51): error TS7006: Parameter 'd' implicitly has an 'any' type.
+src/pages/Testados.tsx(138,45): error TS7006: Parameter 'r' implicitly has an 'any' type.
+src/pages/Testados.tsx(141,52): error TS7006: Parameter 'i' implicitly has an 'any' type.
+src/pages/Testados.tsx(479,58): error TS2304: Cannot find name 'isScanning'.
+src/pages/Testados.tsx(479,77): error TS2304: Cannot find name 'setIsScanning'.
+src/pages/Testados.tsx(482,50): error TS2304: Cannot find name 'isScanning'.
+src/pages/Testados.tsx(488,49): error TS2304: Cannot find name 'isScanning'.
+src/pages/Testados.tsx(489,56): error TS2304: Cannot find name 'setIsScanning'.
