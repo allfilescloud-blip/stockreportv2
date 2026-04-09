@@ -85,6 +85,7 @@ const Inventario = () => {
     const { reports, loading } = useReports<Report>('inventory', filterDate, filterLocation);
     useAuth();
     const [disableDecimals, setDisableDecimals] = useState(false);
+    const [defaultUnifiedLocationId, setDefaultUnifiedLocationId] = useState('');
 
     useEffect(() => {
         const unsubscribeSettings = onSnapshot(doc(db, 'settings', 'general'), (snapshot) => {
@@ -94,6 +95,7 @@ const Inventario = () => {
                 setLockLocation(data.lockLocation || false);
                 setMinDivergence(data.minDivergence !== undefined && data.minDivergence !== '' ? Number(data.minDivergence) : null);
                 setMaxDivergence(data.maxDivergence !== undefined && data.maxDivergence !== '' ? Number(data.maxDivergence) : null);
+                setDefaultUnifiedLocationId(data.defaultUnifiedLocationId || '');
             }
         });
 
@@ -530,7 +532,7 @@ const Inventario = () => {
 
         setReportItems(mergedItems);
         setTitle(`Inventários Unificados (${selectedReports.length})`);
-        setSelectedLocationId('');
+        setSelectedLocationId(defaultUnifiedLocationId || '');
 
         const unifiedNames = reportsToMerge.map(r => {
             const index = reports.findIndex(orig => orig.id === r.id);
@@ -883,8 +885,8 @@ const Inventario = () => {
                                 <select
                                     value={selectedLocationId}
                                     onChange={(e) => handleLocationChange(e.target.value)}
-                                    disabled={lockLocation && (currentReport !== null || reportItems.length > 0)}
-                                    className={`w-full md:w-auto bg-slate-100 dark:bg-slate-800 border border-emerald-500/30 rounded-lg px-4 py-2 text-slate-700 dark:text-slate-300 font-bold focus:ring-2 focus:ring-emerald-500 outline-none ${lockLocation && (currentReport !== null || reportItems.length > 0) ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                    disabled={lockLocation && (currentReport !== null || reportItems.length > 0) && !currentReport?.id?.startsWith('unified-')}
+                                    className={`w-full md:w-auto bg-slate-100 dark:bg-slate-800 border border-emerald-500/30 rounded-lg px-4 py-2 text-slate-700 dark:text-slate-300 font-bold focus:ring-2 focus:ring-emerald-500 outline-none ${lockLocation && (currentReport !== null || reportItems.length > 0) && !currentReport?.id?.startsWith('unified-') ? 'opacity-50 cursor-not-allowed' : ''}`}
                                 >
                                     <option value="" disabled>Selecione um Local</option>
                                     {locations.map(loc => (

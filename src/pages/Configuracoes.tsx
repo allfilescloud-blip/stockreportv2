@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Settings as SettingsIcon, User, Shield, Bell, Info, MapPin, Database as DatabaseIcon, Sliders, AlertTriangle } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
-import { doc, setDoc, getDoc } from 'firebase/firestore';
+import { doc, setDoc, getDoc, collection, query, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '../db/firebase';
 import { useTheme } from '../contexts/ThemeContext';
 import toast from 'react-hot-toast';
@@ -23,6 +23,12 @@ interface GeneralSettings {
     lockLocation: boolean;
     minDivergence?: number | string;
     maxDivergence?: number | string;
+    defaultUnifiedLocationId?: string;
+}
+
+interface Location {
+    id: string;
+    name: string;
 }
 
 const Configuracoes = () => {
@@ -42,8 +48,11 @@ const Configuracoes = () => {
         disableDecimals: false,
         lockLocation: false,
         minDivergence: '',
-        maxDivergence: ''
+        maxDivergence: '',
+        defaultUnifiedLocationId: ''
     });
+
+    const [locations, setLocations] = useState<Location[]>([]);
 
     useEffect(() => {
         if (user) {
@@ -59,8 +68,16 @@ const Configuracoes = () => {
                     setGeneralOptions(prev => ({ ...prev, ...optionsDoc.data() as GeneralSettings }));
                 }
             };
+
+            const unsubscribeLocs = onSnapshot(query(collection(db, 'locations')), (snapshot) => {
+                const locs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Location[];
+                locs.sort((a, b) => a.name.localeCompare(b.name));
+                setLocations(locs);
+            });
+
             loadUserNotifications();
             loadGeneralOptions();
+            return () => unsubscribeLocs();
         }
     }, [user]);
 
@@ -248,6 +265,30 @@ const Configuracoes = () => {
                                                     className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-4 py-2 text-slate-900 dark:text-white focus:ring-1 focus:ring-blue-500 outline-none placeholder:text-slate-400 dark:placeholder:text-slate-600"
                                                 />
                                             </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="p-4 bg-slate-100/30 dark:bg-slate-800/30 rounded-2xl border border-slate-200 dark:border-slate-800 transition-all hover:border-emerald-500/30 group">
+                                        <div className="flex items-center gap-4 mb-4">
+                                            <div className="p-2 bg-emerald-500/10 rounded-xl text-emerald-500 group-hover:scale-110 transition-transform">
+                                                <MapPin size={20} />
+                                            </div>
+                                            <div>
+                                                <h3 className="text-slate-900 dark:text-white font-bold tracking-tight">Local Padrão para Unificações</h3>
+                                                <p className="text-slate-500 dark:text-slate-400 text-sm">Local sugerido automaticamente ao unificar múltiplos inventários</p>
+                                            </div>
+                                        </div>
+                                        <div className="pl-12">
+                                            <select
+                                                value={generalOptions.defaultUnifiedLocationId || ''}
+                                                onChange={(e) => updateGeneralOption('defaultUnifiedLocationId', e.target.value)}
+                                                className="w-full max-w-md bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-4 py-2 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                                            >
+                                                <option value="">Nenhum (Seleção manual)</option>
+                                                {locations.map(loc => (
+                                                    <option key={loc.id} value={loc.id}>{loc.name}</option>
+                                                ))}
+                                            </select>
                                         </div>
                                     </div>
                                 </div>
