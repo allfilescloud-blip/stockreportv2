@@ -10,14 +10,13 @@ import {
     serverTimestamp,
     deleteDoc,
     getDocs,
-    getDoc
+    onSnapshot
 } from 'firebase/firestore';
 import { db } from '../db/firebase';
 import { Plus, X, ClipboardList, Printer, Trash2, Edit2, AlertTriangle, Share2, Calculator } from 'lucide-react';
 import { shareReport, printWebReport } from '../utils/reportUtils';
 import { ProductPicker } from '../components/operational/ProductPicker';
 import { useReports } from '../hooks/useReports';
-import { useAuth } from '../hooks/useAuth';
 import { ReportSkeleton } from '../components/ReportSkeleton';
 
 interface ReportItem {
@@ -59,20 +58,16 @@ const Testados = () => {
     const [reportIdToDelete, setReportIdToDelete] = useState<string | null>(null);
 
     const { reports, loading } = useReports<Report>('tested', filterDate);
-    const { user } = useAuth();
     const [disableDecimals, setDisableDecimals] = useState(false);
 
     useEffect(() => {
-        if (user) {
-            const loadOptions = async () => {
-                const optionsDoc = await getDoc(doc(db, 'users', user.uid, 'settings', 'general'));
-                if (optionsDoc.exists()) {
-                    setDisableDecimals(optionsDoc.data().disableDecimals || false);
-                }
-            };
-            loadOptions();
-        }
-    }, [user]);
+        const unsubscribeSettings = onSnapshot(doc(db, 'settings', 'general'), (snapshot) => {
+            if (snapshot.exists()) {
+                setDisableDecimals(snapshot.data().disableDecimals || false);
+            }
+        });
+        return () => unsubscribeSettings();
+    }, []);
 
     const skuInputRef = useRef<HTMLInputElement>(null);
     const quantityInputRef = useRef<HTMLInputElement>(null);

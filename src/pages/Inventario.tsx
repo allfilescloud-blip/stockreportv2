@@ -8,8 +8,8 @@ import {
     arrayUnion,
     serverTimestamp,
     deleteDoc,
-    getDoc,
     onSnapshot,
+    runTransaction,
 } from 'firebase/firestore';
 import { db } from '../db/firebase';
 import { Plus, Trash2, MapPin, Calculator, ClipboardList, X, AlertTriangle, Share2, Printer, Layers, Edit2 } from 'lucide-react';
@@ -47,6 +47,7 @@ interface Report {
     locationName?: string;
     sequentialId?: number;
     notes?: string;
+    status?: 'in_progress' | 'completed';
 }
 
 const Inventario = () => {
@@ -77,26 +78,27 @@ const Inventario = () => {
     const [lockLocation, setLockLocation] = useState(false);
     const [showDivergenceModal, setShowDivergenceModal] = useState(false);
     const [divergenceInfo, setDivergenceInfo] = useState<{ sku: string, diff: number, min?: number, max?: number, isUpdate: boolean } | null>(null);
+    const [showConflictModal, setShowConflictModal] = useState(false);
+    const [conflictReport, setConflictReport] = useState<Report | null>(null);
+    const [pendingLocationId, setPendingLocationId] = useState('');
 
     const { reports, loading } = useReports<Report>('inventory', filterDate, filterLocation);
-    const { user } = useAuth();
+    useAuth();
     const [disableDecimals, setDisableDecimals] = useState(false);
 
     useEffect(() => {
-        if (user) {
-            const loadOptions = async () => {
-                const optionsDoc = await getDoc(doc(db, 'users', user.uid, 'settings', 'general'));
-                if (optionsDoc.exists()) {
-                    const data = optionsDoc.data();
-                    setDisableDecimals(data.disableDecimals || false);
-                    setLockLocation(data.lockLocation || false);
-                    setMinDivergence(data.minDivergence !== undefined && data.minDivergence !== '' ? Number(data.minDivergence) : null);
-                    setMaxDivergence(data.maxDivergence !== undefined && data.maxDivergence !== '' ? Number(data.maxDivergence) : null);
-                }
-            };
-            loadOptions();
-        }
-    }, [user]);
+        const unsubscribeSettings = onSnapshot(doc(db, 'settings', 'general'), (snapshot) => {
+            if (snapshot.exists()) {
+                const data = snapshot.data();
+                setDisableDecimals(data.disableDecimals || false);
+                setLockLocation(data.lockLocation || false);
+                setMinDivergence(data.minDivergence !== undefined && data.minDivergence !== '' ? Number(data.minDivergence) : null);
+                setMaxDivergence(data.maxDivergence !== undefined && data.maxDivergence !== '' ? Number(data.maxDivergence) : null);
+            }
+        });
+
+        return () => unsubscribeSettings();
+    }, []);
 
     const skuInputRef = useRef<HTMLInputElement>(null);
     const quantityInputRef = useRef<HTMLInputElement>(null);
@@ -115,7 +117,19 @@ const Inventario = () => {
         };
     }, []);
 
-    // Helper functions removed as they are now handled by ProductPicker
+    useEffect(() => {
+        let unsubscribe = () => {};
+        if (currentReport && !currentReport.id.startsWith('unified-')) {
+            const reportRef = doc(db, 'reports', currentReport.id);
+            unsubscribe = onSnapshot(reportRef, (docSnap) => {
+                if (docSnap.exists()) {
+                    const data = docSnap.data();
+                    setReportItems(data.items || []);
+                }
+            });
+        }
+        return () => unsubscribe();
+    }, [currentReport?.id]);
 
     const addItemToReport = async (force: boolean = false) => {
         if (!selectedProduct) return;
@@ -132,23 +146,13 @@ const Inventario = () => {
             return;
         }
 
-        // Buscar contagem anterior usando o array local de reports
+        const previousReport = reports.find(r => 
+            r.locationId === selectedLocationId &&
+            r.id !== currentReport?.id &&
+            r.status !== 'in_progress'
+        );
+
         let previousCount = 0;
-        let previousReport = null;
-
-        if (currentReport) {
-            // Editando: procurar o primeiro relatório do mesmo local que seja mais antigo que o atual
-            const currentReportCreatedAt = currentReport.createdAt?.toDate ? currentReport.createdAt.toDate().getTime() : Date.now();
-            previousReport = reports.find(r =>
-                r.locationId === selectedLocationId &&
-                r.id !== currentReport.id &&
-                (r.createdAt?.toDate ? r.createdAt.toDate().getTime() : 0) < currentReportCreatedAt
-            );
-        } else {
-            // Novo: o mais recente (primeiro do array) com o mesmo local
-            previousReport = reports.find(r => r.locationId === selectedLocationId);
-        }
-
         if (previousReport) {
             const prevItem = previousReport.items.find((i: any) => i.productId === selectedProduct.id);
             previousCount = prevItem ? prevItem.currentCount : 0;
@@ -157,7 +161,6 @@ const Inventario = () => {
         const currentCount = Number(quantity) || 0;
         const diff = currentCount - previousCount;
 
-        // Verificar Divergência
         if (!force) {
             const isMinDivergent = minDivergence !== null && minDivergence !== 0 && diff < minDivergence;
             const isMaxDivergent = maxDivergence !== null && maxDivergence !== 0 && diff > maxDivergence;
@@ -183,24 +186,104 @@ const Inventario = () => {
             previousCount: previousCount
         };
 
-        setReportItems([...reportItems, newItem]);
+        if (currentReport && !currentReport.id.startsWith('unified-')) {
+            const docRef = doc(db, 'reports', currentReport.id);
+            try {
+                await runTransaction(db, async (transaction) => {
+                    const sfDoc = await transaction.get(docRef);
+                    if (!sfDoc.exists()) return;
+                    const latestItems = sfDoc.data().items || [];
+                    const updatedItems = [...latestItems, newItem];
+                    transaction.update(docRef, { 
+                        items: updatedItems, 
+                        totalItems: updatedItems.length, 
+                        updatedAt: serverTimestamp() 
+                    });
+                });
+            } catch (err) {
+                toast.error("Erro ao salvar item no banco.");
+            }
+        } else if (!currentReport) {
+            const nextSequentialId = reports.length > 0
+                ? Math.max(...reports.map(r => r.sequentialId || 0)) + 1
+                : 1;
+            const locationObj = locations.find(l => l.id === selectedLocationId);
+            
+            try {
+                const tempItems = [newItem];
+                const newDoc = await addDoc(collection(db, 'reports'), {
+                    type: 'inventory',
+                    title: title.trim(),
+                    items: tempItems,
+                    totalItems: 1,
+                    locationId: selectedLocationId,
+                    locationName: locationObj?.name || '',
+                    sequentialId: nextSequentialId,
+                    createdAt: serverTimestamp(),
+                    updatedAt: serverTimestamp(),
+                    status: 'in_progress'
+                });
+                
+                setCurrentReport({
+                    id: newDoc.id,
+                    type: 'inventory',
+                    title: title.trim(),
+                    items: tempItems,
+                    totalItems: 1,
+                    locationId: selectedLocationId,
+                    locationName: locationObj?.name || '',
+                    sequentialId: nextSequentialId,
+                    status: 'in_progress'
+                } as Report);
+                setReportItems(tempItems);
+            } catch (err) {
+                toast.error("Erro ao iniciar inventário no banco.");
+            }
+        } else {
+            setReportItems([...reportItems, newItem]);
+        }
+
         setSelectedProduct(null);
         setSearchTerm('');
         setQuantity('');
         skuInputRef.current?.focus();
     };
 
-    const handleSum = () => {
+    const handleSum = async () => {
         if (summingIndex !== null && sumValue !== '') {
-            const updatedItems = [...reportItems];
-            updatedItems[summingIndex].currentCount += Number(sumValue);
-            setReportItems(updatedItems);
+            const item = reportItems[summingIndex];
+            const amountToAdd = Number(sumValue);
+            
+            if (currentReport && !currentReport.id.startsWith('unified-')) {
+                const docRef = doc(db, 'reports', currentReport.id);
+                try {
+                    await runTransaction(db, async (transaction) => {
+                        const sfDoc = await transaction.get(docRef);
+                        if (!sfDoc.exists()) throw new Error("Documento não encontrado");
+                        const latestItems = sfDoc.data().items || [];
+                        const itemToUpdateIndex = latestItems.findIndex((i: any) => i.productId === item.productId);
+                        if (itemToUpdateIndex !== -1) {
+                             latestItems[itemToUpdateIndex].currentCount += amountToAdd;
+                             transaction.update(docRef, { 
+                                 items: latestItems, 
+                                 updatedAt: serverTimestamp() 
+                             });
+                        }
+                    });
+                } catch (error) { toast.error("Erro ao somar no banco!"); return; }
+            } else {
+                const updatedItems = [...reportItems];
+                updatedItems[summingIndex].currentCount += amountToAdd;
+                setReportItems(updatedItems);
+            }
+            
             setSummingIndex(null);
             setSumValue('');
+            skuInputRef.current?.focus();
         }
     };
 
-    const confirmUpdate = (force: boolean = false) => {
+    const confirmUpdate = async (force: boolean = false) => {
         if (duplicateItemIndex !== null) {
             const item = reportItems[duplicateItemIndex];
             const currentCount = Number(quantity) || 0;
@@ -223,9 +306,29 @@ const Inventario = () => {
                 }
             }
 
-            const updatedItems = [...reportItems];
-            updatedItems[duplicateItemIndex].currentCount = currentCount;
-            setReportItems(updatedItems);
+            if (currentReport && !currentReport.id.startsWith('unified-')) {
+                const docRef = doc(db, 'reports', currentReport.id);
+                try {
+                    await runTransaction(db, async (transaction) => {
+                        const sfDoc = await transaction.get(docRef);
+                        if (!sfDoc.exists()) throw new Error("Documento não encontrado");
+                        const latestItems = sfDoc.data().items || [];
+                        const itemToUpdateIndex = latestItems.findIndex((i: any) => i.productId === item.productId);
+                        if (itemToUpdateIndex !== -1) {
+                             latestItems[itemToUpdateIndex].currentCount = currentCount;
+                             transaction.update(docRef, { 
+                                 items: latestItems, 
+                                 updatedAt: serverTimestamp() 
+                             });
+                        }
+                    });
+                } catch (error) { toast.error("Erro ao atualizar!"); return; }
+            } else {
+                const updatedItems = [...reportItems];
+                updatedItems[duplicateItemIndex].currentCount = currentCount;
+                setReportItems(updatedItems);
+            }
+
             setSelectedProduct(null);
             setSearchTerm('');
             setQuantity('');
@@ -235,24 +338,49 @@ const Inventario = () => {
         }
     };
 
+    const handleDeleteItem = async () => {
+        if (itemIndexToDelete !== null) {
+            const index = itemIndexToDelete;
+            const item = reportItems[index];
+
+            if (currentReport && !currentReport.id.startsWith('unified-')) {
+                const docRef = doc(db, 'reports', currentReport.id);
+                try {
+                    await runTransaction(db, async (transaction) => {
+                        const sfDoc = await transaction.get(docRef);
+                        if (!sfDoc.exists()) return;
+                        const latestItems = sfDoc.data().items || [];
+                        const filteredItems = latestItems.filter((i: any) => i.productId !== item.productId);
+                        transaction.update(docRef, { 
+                            items: filteredItems,
+                            totalItems: filteredItems.length,
+                            updatedAt: serverTimestamp() 
+                        });
+                    });
+                } catch (error) { toast.error("Erro ao excluir item do banco!"); return; }
+            } else {
+                setReportItems(reportItems.filter((_, i) => i !== index));
+            }
+            setShowDeleteConfirm(false);
+            setItemIndexToDelete(null);
+        }
+    };
+
     const checkMissingItems = async () => {
-        // Apenas na criação de novo relatório
-        if (currentReport) {
+        if (currentReport?.id.startsWith('unified-')) {
             await executeFinalSave(reportItems);
             return;
         }
 
-        // Buscar o último inventário do array local
-        const lastReport = reports.find(r => r.locationId === selectedLocationId);
+        const previousReport = reports.find(r => r.locationId === selectedLocationId && r.id !== currentReport?.id);
 
-        if (!lastReport) {
+        if (!previousReport) {
             await executeFinalSave(reportItems);
             return;
         }
 
-        // Identificar SKUs que tinham >0 no anterior e não estão no atual
         const currentSkus = new Set(reportItems.map(i => i.sku));
-        const missing = lastReport.items.filter(item =>
+        const missing = previousReport.items.filter(item =>
             item.currentCount > 0 && !currentSkus.has(item.sku)
         );
 
@@ -281,7 +409,6 @@ const Inventario = () => {
     const executeFinalSave = async (itemsToSave: ReportItem[]) => {
         if (itemsToSave.length === 0) return;
 
-        // Validação: obrigatório selecionar o local ao salvar inventários unificados
         if (currentReport?.id.startsWith('unified-') && !selectedLocationId) {
             toast.error("A seleção de um local é obrigatória para salvar relatórios unificados.");
             return;
@@ -303,12 +430,12 @@ const Inventario = () => {
                 totalItems: itemsToSave.length,
                 locationId: selectedLocationId,
                 locationName: finalLocationName,
+                status: 'completed',
                 updatedAt: serverTimestamp()
             });
         } else {
-            // Calcular o próximo ID sequencial baseado nos relatórios existentes
             const nextSequentialId = reports.length > 0
-                ? Math.max(reports.length, ...reports.map(r => r.sequentialId || 0)) + 1
+                ? Math.max(...reports.map(r => r.sequentialId || 0)) + 1
                 : 1;
 
             const newDoc = await addDoc(collection(db, 'reports'), {
@@ -320,12 +447,12 @@ const Inventario = () => {
                 locationName: finalLocationName,
                 sequentialId: nextSequentialId,
                 createdAt: serverTimestamp(),
-                updatedAt: serverTimestamp()
+                updatedAt: serverTimestamp(),
+                status: 'completed'
             });
             reportRef = newDoc;
         }
 
-        // Atualizar histórico de cada produto
         for (const item of itemsToSave) {
             const historyEntry = {
                 action: 'Inventário',
@@ -399,13 +526,11 @@ const Inventario = () => {
         });
 
         const mergedItems = Array.from(mergedItemsMap.values());
-
-        // Coletar locais únicos dos relatórios mesclados
         const uniqueLocations = Array.from(new Set(reportsToMerge.map(r => r.locationName).filter(Boolean)));
 
         setReportItems(mergedItems);
         setTitle(`Inventários Unificados (${selectedReports.length})`);
-        setSelectedLocationId(''); // O usuário pode então selecionar um novo local ou deixar em branco
+        setSelectedLocationId('');
 
         const unifiedNames = reportsToMerge.map(r => {
             const index = reports.findIndex(orig => orig.id === r.id);
@@ -413,7 +538,6 @@ const Inventario = () => {
             return r.title || `Inventário #${displayId}`;
         });
 
-        // Passar os locais originais para o "locationName" temporariamente para sabermos durante a impressão ou salvamento
         setCurrentReport({
             id: 'unified-' + Date.now().toString(),
             type: 'inventory',
@@ -438,22 +562,63 @@ const Inventario = () => {
         printWebReport(report, printId);
     };
 
+    const handleCloseInventory = async () => {
+        if (reportItems.length === 0 && currentReport && !currentReport.id.startsWith('unified-')) {
+            try {
+                await deleteDoc(doc(db, 'reports', currentReport.id));
+                toast.error("Inventário vazio removido.");
+            } catch (err) {
+                console.error("Erro ao limpar inventário vazio:", err);
+            }
+        }
+        setIsModalOpen(false);
+        setReportItems([]);
+        setTitle('');
+        setSelectedLocationId('');
+        setCurrentReport(null);
+    };
+
     const handleLocationChange = (newLocationId: string) => {
+        if (!newLocationId) {
+            setSelectedLocationId('');
+            return;
+        }
+
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        const existingReportToday = reports.find(r => {
+            if (r.locationId !== newLocationId || r.id === currentReport?.id) return false;
+            const reportDate = r.createdAt?.toDate ? r.createdAt.toDate() : new Date();
+            reportDate.setHours(0, 0, 0, 0);
+            return reportDate.getTime() === today.getTime();
+        });
+
+        if (existingReportToday && !currentReport) {
+            setConflictReport(existingReportToday);
+            setPendingLocationId(newLocationId);
+            setShowConflictModal(true);
+            return;
+        }
+
         setSelectedLocationId(newLocationId);
 
-        if (reportItems.length > 0) {
-            let previousReport: Report | undefined;
-
-            if (currentReport && !currentReport.id.startsWith('unified-')) {
-                const currentReportCreatedAt = currentReport.createdAt?.toDate ? currentReport.createdAt.toDate().getTime() : Date.now();
-                previousReport = reports.find(r =>
-                    r.locationId === newLocationId &&
-                    r.id !== currentReport.id &&
-                    (r.createdAt?.toDate ? r.createdAt.toDate().getTime() : 0) < currentReportCreatedAt
-                );
-            } else {
-                previousReport = reports.find(r => r.locationId === newLocationId);
+        if (!currentReport) {
+            const inProgressReport = reports.find(r => r.locationId === newLocationId && r.status === 'in_progress');
+            if (inProgressReport) {
+                toast.success('Retomando inventário em andamento neste local...', { duration: 4000 });
+                setCurrentReport(inProgressReport);
+                setTitle(inProgressReport.title || '');
+                return;
             }
+        }
+
+        if (reportItems.length > 0) {
+            const previousReport = reports.find(r => 
+                r.locationId === newLocationId &&
+                r.id !== currentReport?.id &&
+                r.status !== 'in_progress'
+            );
 
             const updatedItems = reportItems.map(item => {
                 let previousCount = 0;
@@ -538,13 +703,12 @@ const Inventario = () => {
                             <table className="w-full text-left">
                                 <thead>
                                     <tr className="bg-slate-200/50 dark:bg-slate-700/50 text-slate-500 dark:text-slate-400 text-sm">
-                                        <th className="px-6 py-4 font-semibold w-12">
-                                            <div className="w-4 h-4" /> {/* Spacer for alignment */}
+                                        <th className="px-6 py-3 font-semibold w-12 text-center text-[10px] tracking-wider uppercase">
+                                            <div className="w-4 h-4 mx-auto" />
                                         </th>
                                         <th className="px-6 py-4 font-semibold">ID</th>
                                         <th className="px-6 py-4 font-semibold">Título</th>
                                         <th className="px-6 py-4 font-semibold">Criação</th>
-                                        <th className="px-6 py-4 font-semibold">Alteração</th>
                                         <th className="px-6 py-4 font-semibold text-center">Itens</th>
                                         <th className="px-6 py-4 font-semibold text-right">Ações</th>
                                     </tr>
@@ -553,9 +717,11 @@ const Inventario = () => {
                                     {reports.map((report, index) => {
                                         const displayId = report.sequentialId || (reports.length - index);
                                         const isSelected = selectedReports.includes(report.id);
+                                        const dateText = report.createdAt?.toDate ? report.createdAt.toDate().toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Processando...';
+                                        
                                         return (
                                             <tr key={report.id} className={`transition-colors ${isSelected ? 'bg-indigo-50/50 dark:bg-indigo-900/20' : 'hover:bg-slate-100/30 dark:bg-slate-800/30'}`}>
-                                                <td className="px-6 py-4">
+                                                <td className="px-6 py-4 text-center">
                                                     <input
                                                         type="checkbox"
                                                         checked={isSelected}
@@ -576,20 +742,7 @@ const Inventario = () => {
                                                     )}
                                                 </td>
                                                 <td className="px-6 py-4 text-slate-700 dark:text-slate-300 text-sm">
-                                                    {report.createdAt?.toDate ? (
-                                                        <div className="flex flex-col">
-                                                            <span>{report.createdAt.toDate().toLocaleDateString('pt-BR')}</span>
-                                                            <span className="text-xs text-slate-500 font-normal mt-0.5">{report.createdAt.toDate().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
-                                                        </div>
-                                                    ) : 'Processando...'}
-                                                </td>
-                                                <td className="px-6 py-4 text-slate-500 dark:text-slate-400 text-sm">
-                                                    {report.updatedAt?.toDate ? (
-                                                        <div className="flex flex-col">
-                                                            <span>{report.updatedAt.toDate().toLocaleDateString('pt-BR')}</span>
-                                                            <span className="text-xs font-normal mt-0.5">{report.updatedAt.toDate().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
-                                                        </div>
-                                                    ) : '-'}
+                                                    {dateText}
                                                 </td>
                                                 <td className="px-6 py-4 text-center">
                                                     <span className="bg-emerald-500/10 text-emerald-400 px-3 py-1 rounded-full text-xs font-bold">
@@ -638,7 +791,7 @@ const Inventario = () => {
                         <div className="md:hidden divide-y divide-slate-200 dark:divide-slate-800">
                             {reports.map((report, index) => {
                                 const displayId = report.sequentialId || (reports.length - index);
-                                const dateText = report.createdAt?.toDate ? report.createdAt.toDate().toLocaleString('pt-BR') : 'Processando...';
+                                const dateText = report.createdAt?.toDate ? report.createdAt.toDate().toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Processando...';
                                 const isSelected = selectedReports.includes(report.id);
                                 return (
                                     <div key={report.id} className={`p-4 space-y-4 transition-colors ${isSelected ? 'bg-indigo-50/50 dark:bg-indigo-900/20' : 'hover:bg-slate-100/20 dark:bg-slate-800/20'}`}>
@@ -710,11 +863,6 @@ const Inventario = () => {
                                     </div>
                                 );
                             })}
-                            {reports.length === 0 && (
-                                <div className="p-12 text-center text-slate-500 italic text-sm">
-                                    Nenhum relatório cadastrado.
-                                </div>
-                            )}
                         </div>
                     </>
                 )}
@@ -744,7 +892,7 @@ const Inventario = () => {
                                     ))}
                                 </select>
                             </div>
-                            <button onClick={() => { setIsModalOpen(false); setReportItems([]); setTitle(''); setSelectedLocationId(''); setCurrentReport(null); }} className="absolute md:static top-4 right-4 md:top-auto md:right-auto text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-white shrink-0">
+                            <button onClick={handleCloseInventory} className="absolute md:static top-4 right-4 md:top-auto md:right-auto text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-white shrink-0">
                                 <X size={24} />
                             </button>
                         </div>
@@ -800,7 +948,6 @@ const Inventario = () => {
                                 </div>
                             </div>
 
-                            {/* Lista de Itens do Relatório */}
                             <div className="space-y-4">
                                 <h3 className="text-sm font-semibold text-slate-500 dark:text-slate-400 uppercase flex items-center gap-2">
                                     <ClipboardList size={16} />
@@ -818,52 +965,46 @@ const Inventario = () => {
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-200 dark:divide-slate-800 bg-white/30 dark:bg-slate-900/30">
-                                            {reportItems
-                                                .filter(i =>
-                                                    i.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                                                    i.description.toLowerCase().includes(searchTerm.toLowerCase())
-                                                )
-                                                .map((item, idx) => {
-                                                    const diff = item.currentCount - item.previousCount;
-                                                    const originalIndex = reportItems.findIndex(ri => ri === item);
-                                                    return (
-                                                        <tr key={idx}>
-                                                            <td className="px-6 py-4">
-                                                                <p className="font-mono text-emerald-400">{item.sku}</p>
-                                                                <p className="text-slate-500 text-xs truncate max-w-[200px]">{item.description}</p>
-                                                            </td>
-                                                            <td className="px-6 py-4 text-center font-medium text-slate-500 dark:text-slate-400">{item.previousCount}</td>
-                                                            <td className="px-6 py-4 text-center font-bold text-slate-900 dark:text-white">{item.currentCount}</td>
-                                                            <td className={`px-6 py-4 text-center font-bold ${diff > 0 ? 'text-emerald-400' : diff < 0 ? 'text-red-400' : 'text-slate-500'}`}>
-                                                                {diff > 0 ? `+${diff}` : diff}
-                                                            </td>
-                                                            <td className="px-6 py-4 text-right">
-                                                                <div className="flex justify-end gap-2">
-                                                                    <button
-                                                                        onClick={() => {
-                                                                            setSummingIndex(originalIndex);
-                                                                            setSumValue('');
-                                                                        }}
-                                                                        className="text-emerald-500 hover:text-emerald-400 p-1"
-                                                                        title="Somar Quantidade"
-                                                                    >
-                                                                        <Calculator size={18} />
-                                                                    </button>
-                                                                    <button
-                                                                        onClick={() => {
-                                                                            setItemIndexToDelete(originalIndex);
-                                                                            setShowDeleteConfirm(true);
-                                                                        }}
-                                                                        className="text-slate-600 hover:text-red-400 p-1"
-                                                                        title="Excluir"
-                                                                    >
-                                                                        <Trash2 size={18} />
-                                                                    </button>
-                                                                </div>
-                                                            </td>
-                                                        </tr>
-                                                    );
-                                                })}
+                                            {reportItems.map((item, idx) => {
+                                                const diff = item.currentCount - item.previousCount;
+                                                return (
+                                                    <tr key={idx}>
+                                                        <td className="px-6 py-4">
+                                                            <p className="font-mono text-emerald-400">{item.sku}</p>
+                                                            <p className="text-slate-500 text-xs truncate max-w-[200px]">{item.description}</p>
+                                                        </td>
+                                                        <td className="px-6 py-4 text-center font-medium text-slate-500 dark:text-slate-400">{item.previousCount}</td>
+                                                        <td className="px-6 py-4 text-center font-bold text-slate-900 dark:text-white">{item.currentCount}</td>
+                                                        <td className={`px-6 py-4 text-center font-bold ${diff > 0 ? 'text-emerald-400' : diff < 0 ? 'text-red-400' : 'text-slate-500'}`}>
+                                                            {diff > 0 ? `+${diff}` : diff}
+                                                        </td>
+                                                        <td className="px-6 py-4 text-right">
+                                                            <div className="flex justify-end gap-2">
+                                                                <button
+                                                                    onClick={() => {
+                                                                        setSummingIndex(idx);
+                                                                        setSumValue('');
+                                                                    }}
+                                                                    className="text-emerald-500 hover:text-emerald-400 p-1"
+                                                                    title="Somar Quantidade"
+                                                                >
+                                                                    <Calculator size={18} />
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => {
+                                                                        setItemIndexToDelete(idx);
+                                                                        setShowDeleteConfirm(true);
+                                                                    }}
+                                                                    className="text-slate-600 hover:text-red-400 p-1"
+                                                                    title="Excluir"
+                                                                >
+                                                                    <Trash2 size={18} />
+                                                                </button>
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })}
                                             {reportItems.length === 0 && (
                                                 <tr>
                                                     <td colSpan={5} className="px-6 py-12 text-center text-slate-600 italic">
@@ -875,70 +1016,58 @@ const Inventario = () => {
                                     </table>
                                 </div>
 
-                                {/* Mobile View dos itens no modal */}
                                 <div className="md:hidden space-y-3">
-                                    {reportItems
-                                        .filter(i =>
-                                            i.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                                            i.description.toLowerCase().includes(searchTerm.toLowerCase())
-                                        )
-                                        .map((item, idx) => {
-                                            const diff = item.currentCount - item.previousCount;
-                                            const originalIndex = reportItems.findIndex(ri => ri === item);
-                                            return (
-                                                <div key={idx} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 flex justify-between items-center shadow-sm">
-                                                    <div className="flex-1 min-w-0 pr-4">
-                                                        <p className="font-mono text-emerald-400 font-bold text-sm truncate">{item.sku}</p>
-                                                        <p className="text-slate-500 text-[10px] truncate">{item.description}</p>
-                                                        <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-                                                            <div className="text-slate-500 dark:text-slate-400 bg-slate-100/50 dark:bg-slate-800/50 p-2 rounded-lg text-center">
-                                                                <span className="block text-[8px] uppercase font-bold text-slate-500 mb-0.5">Anterior</span>
-                                                                <span className="font-bold">{item.previousCount}</span>
-                                                            </div>
-                                                            <div className="text-slate-900 dark:text-white bg-slate-100/50 dark:bg-slate-800/50 p-2 rounded-lg text-center">
-                                                                <span className="block text-[8px] uppercase font-bold text-slate-500 mb-0.5">Atual</span>
-                                                                <span className="font-bold">{item.currentCount}</span>
-                                                            </div>
+                                    {reportItems.map((item, idx) => {
+                                        const diff = item.currentCount - item.previousCount;
+                                        return (
+                                            <div key={idx} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 flex justify-between items-center shadow-sm">
+                                                <div className="flex-1 min-w-0 pr-4">
+                                                    <p className="font-mono text-emerald-400 font-bold text-sm truncate">{item.sku}</p>
+                                                    <p className="text-slate-500 text-[10px] truncate">{item.description}</p>
+                                                    <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                                                        <div className="text-slate-500 dark:text-slate-400 bg-slate-100/50 dark:bg-slate-800/50 p-2 rounded-lg text-center">
+                                                            <span className="block text-[8px] uppercase font-bold text-slate-500 mb-0.5">Anterior</span>
+                                                            <span className="font-bold">{item.previousCount}</span>
                                                         </div>
-                                                        <div className={`mt-2 text-center p-1 rounded-lg text-[10px] font-bold ${diff > 0 ? 'bg-emerald-500/10 text-emerald-400' : diff < 0 ? 'bg-red-500/10 text-red-500' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'}`}>
-                                                            Diferença: {diff > 0 ? `+${diff}` : diff}
+                                                        <div className="text-slate-900 dark:text-white bg-slate-100/50 dark:bg-slate-800/50 p-2 rounded-lg text-center">
+                                                            <span className="block text-[8px] uppercase font-bold text-slate-500 mb-0.5">Atual</span>
+                                                            <span className="font-bold">{item.currentCount}</span>
                                                         </div>
                                                     </div>
-                                                    <div className="flex flex-col gap-2">
-                                                        <button
-                                                            onClick={() => {
-                                                                setSummingIndex(originalIndex);
-                                                                setSumValue('');
-                                                            }}
-                                                            className="p-3 bg-emerald-500/10 text-emerald-500 rounded-lg active:scale-95 transition-all"
-                                                        >
-                                                            <Calculator size={18} />
-                                                        </button>
-                                                        <button
-                                                            onClick={() => {
-                                                                setItemIndexToDelete(originalIndex);
-                                                                setShowDeleteConfirm(true);
-                                                            }}
-                                                            className="p-3 bg-red-400/10 text-red-500 rounded-lg active:scale-95 transition-all"
-                                                        >
-                                                            <Trash2 size={18} />
-                                                        </button>
+                                                    <div className={`mt-2 text-center p-1 rounded-lg text-[10px] font-bold ${diff > 0 ? 'bg-emerald-500/10 text-emerald-400' : diff < 0 ? 'bg-red-500/10 text-red-500' : 'bg-slate-100 dark:bg-slate-800 text-slate-500'}`}>
+                                                        Diferença: {diff > 0 ? `+${diff}` : diff}
                                                     </div>
                                                 </div>
-                                            );
-                                        })}
-                                    {reportItems.length === 0 && (
-                                        <div className="py-8 text-center text-slate-500 italic text-sm border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-xl">
-                                            Nenhum item adicionado
-                                        </div>
-                                    )}
+                                                <div className="flex flex-col gap-2">
+                                                    <button
+                                                        onClick={() => {
+                                                            setSummingIndex(idx);
+                                                            setSumValue('');
+                                                        }}
+                                                        className="p-3 bg-emerald-500/10 text-emerald-500 rounded-lg active:scale-95 transition-all"
+                                                    >
+                                                        <Calculator size={18} />
+                                                    </button>
+                                                    <button
+                                                        onClick={() => {
+                                                            setItemIndexToDelete(idx);
+                                                            setShowDeleteConfirm(true);
+                                                        }}
+                                                        className="p-3 bg-red-400/10 text-red-500 rounded-lg active:scale-95 transition-all"
+                                                    >
+                                                        <Trash2 size={18} />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
                                 </div>
                             </div>
                         </div>
 
                         <div className="p-4 md:p-6 border-t border-slate-200 dark:border-slate-800 bg-white/50 dark:bg-slate-900/50 flex flex-col md:flex-row justify-end gap-3 md:gap-4">
                             <button
-                                onClick={() => { setIsModalOpen(false); setReportItems([]); setTitle(''); setCurrentReport(null); }}
+                                onClick={handleCloseInventory}
                                 className="order-2 md:order-1 px-6 py-2 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-white transition-colors"
                             >
                                 Cancelar
@@ -1002,17 +1131,6 @@ const Inventario = () => {
                                 <p className="text-slate-500 dark:text-slate-400 text-sm leading-relaxed">
                                     O SKU <span className="font-mono font-bold text-amber-500">{divergenceInfo.sku}</span> apresenta uma diferença de <span className="font-bold text-slate-900 dark:text-white">{divergenceInfo.diff > 0 ? `+${divergenceInfo.diff}` : divergenceInfo.diff}</span> unidades.
                                 </p>
-                                <div className="p-4 bg-amber-500/5 rounded-2xl border border-amber-500/20">
-                                    <p className="text-[10px] font-bold uppercase text-amber-600 mb-1">Limites Configurados</p>
-                                    <div className="flex justify-center gap-4 text-xs font-bold text-slate-600 dark:text-slate-300">
-                                        <span>Mín: {divergenceInfo.min ?? '∞'}</span>
-                                        <div className="w-px h-3 bg-slate-300 dark:bg-slate-700" />
-                                        <span>Máx: {divergenceInfo.max ?? '∞'}</span>
-                                    </div>
-                                </div>
-                                <p className="text-slate-900 dark:text-white font-bold text-sm">
-                                    Por favor, realize uma nova conferência deste item antes de prosseguir.
-                                </p>
                             </div>
                             <div className="grid grid-cols-2 gap-4">
                                 <button
@@ -1020,7 +1138,7 @@ const Inventario = () => {
                                         setShowDivergenceModal(false);
                                         setDivergenceInfo(null);
                                     }}
-                                    className="py-3.5 px-4 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold rounded-2xl transition-all active:scale-95 border border-slate-200 dark:border-slate-700"
+                                    className="py-3.5 px-4 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold rounded-2xl transition-all active:scale-95"
                                 >
                                     Revisar
                                 </button>
@@ -1043,60 +1161,49 @@ const Inventario = () => {
                     </div>
                 </div>
             )}
+
             {/* Modal de Itens Ausentes */}
             {showMissingModal && (
                 <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md">
                     <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
-                        <div className="p-6 border-b border-slate-200 dark:border-slate-800 bg-white/50 dark:bg-slate-900/50">
-                            <div className="w-12 h-12 bg-blue-500/10 text-blue-500 rounded-full flex items-center justify-center mb-4">
-                                <AlertTriangle size={24} />
-                            </div>
-                            <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Itens Ausentes Detectados</h2>
-                            <p className="text-slate-500 dark:text-slate-400 text-sm">
-                                Os seguintes SKUs tinham estoque no inventário anterior mas não foram bipados neste. Deseja adicioná-los com quantidade 0?
+                        <div className="p-6 border-b border-slate-200 dark:border-slate-800">
+                            <h2 className="text-xl font-bold text-slate-900 dark:text-white">Itens Ausentes</h2>
+                            <p className="text-slate-500 dark:text-slate-400 text-sm mt-1">
+                                Estes itens tinham estoque no inventário anterior mas não estão neste. Deseja zerá-los?
                             </p>
                         </div>
-
-                        <div className="flex-1 overflow-y-auto p-4 space-y-2 bg-slate-50/50 dark:bg-slate-950/50">
+                        <div className="flex-1 overflow-y-auto p-4 space-y-2">
                             {missingSkus.map(item => (
-                                <div key={item.sku} className="p-3 bg-slate-100/50 dark:bg-slate-800/50 rounded-lg border border-slate-300 dark:border-slate-700 flex justify-between items-center group">
+                                <div key={item.sku} className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg flex justify-between items-center text-sm">
                                     <div>
-                                        <p className="font-mono text-blue-400 text-sm font-bold group-hover:text-blue-300 transition-colors">{item.sku}</p>
-                                        <p className="text-slate-500 text-[10px] truncate max-w-[250px]">{item.description}</p>
+                                        <p className="font-mono text-emerald-400 font-bold">{item.sku}</p>
+                                        <p className="text-slate-500 text-xs truncate max-w-[200px]">{item.description}</p>
                                     </div>
                                     <div className="text-right">
-                                        <p className="text-slate-500 text-[8px] uppercase font-bold">Anterior</p>
-                                        <p className="font-bold text-slate-700 dark:text-slate-300">{item.currentCount}</p>
+                                        <p className="text-slate-500 text-[10px]">Anterior</p>
+                                        <p className="font-bold">{item.currentCount}</p>
                                     </div>
                                 </div>
                             ))}
                         </div>
-
-                        <div className="p-6 bg-white/50 dark:bg-slate-900/50 border-t border-slate-200 dark:border-slate-800 flex flex-col gap-3">
+                        <div className="p-6 border-t border-slate-200 dark:border-slate-800 flex flex-col gap-3">
                             <button
                                 onClick={() => handleSaveWithMissing(true)}
-                                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl transition-all shadow-lg active:scale-95 text-sm"
+                                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl transition-all shadow-lg"
                             >
                                 Sim, zerar itens e finalizar
                             </button>
-                            <div className="grid grid-cols-2 gap-3">
-                                <button
-                                    onClick={() => handleSaveWithMissing(false)}
-                                    className="bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold py-3 rounded-xl transition-all border border-slate-300 dark:border-slate-700 text-xs"
-                                >
-                                    Não, apenas finalizar
-                                </button>
-                                <button
-                                    onClick={() => setShowMissingModal(false)}
-                                    className="bg-transparent hover:bg-slate-100/50 dark:bg-slate-800/50 text-slate-500 hover:text-slate-900 dark:text-white py-3 font-semibold transition-all text-xs"
-                                >
-                                    Revisar
-                                </button>
-                            </div>
+                            <button
+                                onClick={() => handleSaveWithMissing(false)}
+                                className="w-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold py-3 rounded-xl transition-all"
+                            >
+                                Não, apenas finalizar
+                            </button>
                         </div>
                     </div>
                 </div>
             )}
+
             {/* Modal de Soma */}
             {summingIndex !== null && (
                 <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
@@ -1108,38 +1215,28 @@ const Inventario = () => {
                             <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Somar Quantidade</h2>
                             <p className="text-slate-500 dark:text-slate-400 mb-6 text-sm">
                                 Informe o valor para somar ao item <strong>{reportItems[summingIndex].sku}</strong>.
-                                <br />
-                                Atual: {reportItems[summingIndex].currentCount}
                             </p>
                             <input
                                 type="number"
                                 ref={sumInputRef}
                                 autoFocus
-                                placeholder="Valor a somar (ex: 10)"
-                                className="w-full px-4 py-3 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white mb-6 focus:ring-2 focus:ring-emerald-500 outline-none no-spinner"
+                                placeholder="Valor a somar"
+                                className="w-full px-4 py-3 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg text-slate-900 dark:text-white mb-6 focus:ring-2 focus:ring-emerald-500 outline-none"
                                 value={sumValue}
-                                onKeyDown={(e) => {
-                                    if (disableDecimals && (e.key === '.' || e.key === ',')) {
-                                        e.preventDefault();
-                                    }
-                                    if (e.key === 'Enter') handleSum();
-                                }}
+                                onKeyDown={(e) => e.key === 'Enter' && handleSum()}
                                 onChange={(e) => setSumValue(e.target.value === '' ? '' : Number(e.target.value))}
                             />
                             <div className="flex gap-3">
                                 <button
-                                    onClick={() => {
-                                        setSummingIndex(null);
-                                        setSumValue('');
-                                    }}
-                                    className="flex-1 py-3 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-white font-semibold transition-colors"
+                                    onClick={() => { setSummingIndex(null); setSumValue(''); }}
+                                    className="flex-1 py-3 text-slate-500 font-semibold"
                                 >
                                     Cancelar
                                 </button>
                                 <button
                                     onClick={handleSum}
                                     disabled={sumValue === ''}
-                                    className="flex-1 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold py-3 rounded-xl transition-all shadow-lg active:scale-95"
+                                    className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-xl transition-all"
                                 >
                                     Somar
                                 </button>
@@ -1150,83 +1247,103 @@ const Inventario = () => {
             )}
 
             {/* Modal de Confirmação de Exclusão de Item */}
-            {
-                showDeleteConfirm && (
-                    <div className="fixed inset-0 z-[90] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-                        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl animate-in fade-in zoom-in duration-200">
-                            <div className="p-6 text-center">
-                                <div className="w-16 h-16 bg-red-500/10 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4">
-                                    <Trash2 size={32} />
-                                </div>
-                                <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Remover Item?</h2>
-                                <p className="text-slate-500 dark:text-slate-400 mb-6 text-sm">
-                                    Tem certeza que deseja remover este item do relatório? Esta ação não pode ser desfeita.
-                                </p>
-                                <div className="flex gap-3">
-                                    <button
-                                        onClick={() => {
-                                            setShowDeleteConfirm(false);
-                                            setItemIndexToDelete(null);
-                                        }}
-                                        className="flex-1 py-3 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-white font-semibold transition-colors"
-                                    >
-                                        Cancelar
-                                    </button>
-                                    <button
-                                        onClick={() => {
-                                            if (itemIndexToDelete !== null) {
-                                                setReportItems(reportItems.filter((_, i) => i !== itemIndexToDelete));
-                                            }
-                                            setShowDeleteConfirm(false);
-                                            setItemIndexToDelete(null);
-                                        }}
-                                        className="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-3 rounded-xl transition-all shadow-lg active:scale-95"
-                                    >
-                                        Excluir
-                                    </button>
-                                </div>
+            {showDeleteConfirm && (
+                <div className="fixed inset-0 z-[90] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+                    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl">
+                        <div className="p-6 text-center">
+                            <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Remover Item?</h2>
+                            <p className="text-slate-500 mb-6 text-sm">Deseja remover este item do relatório?</p>
+                            <div className="flex gap-3">
+                                <button onClick={() => { setShowDeleteConfirm(false); setItemIndexToDelete(null); }} className="flex-1 py-3 text-slate-500">Cancelar</button>
+                                <button onClick={handleDeleteItem} className="flex-1 bg-red-600 text-white font-bold py-3 rounded-xl">Excluir</button>
                             </div>
                         </div>
                     </div>
-                )
-            }
+                </div>
+            )}
 
             {/* Modal de Confirmação de Exclusão de Relatório */}
-            {
-                showReportDeleteConfirm && (
-                    <div className="fixed inset-0 z-[90] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
-                        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl animate-in fade-in zoom-in duration-200">
-                            <div className="p-6 text-center">
-                                <div className="w-16 h-16 bg-red-500/10 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4">
-                                    <Trash2 size={32} />
-                                </div>
-                                <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Excluir Relatório?</h2>
-                                <p className="text-slate-500 dark:text-slate-400 mb-6 text-sm">
-                                    Tem certeza que deseja apagar este relatório permanentemente?
-                                </p>
-                                <div className="flex gap-3">
-                                    <button
-                                        onClick={() => {
-                                            setShowReportDeleteConfirm(false);
-                                            setReportIdToDelete(null);
-                                        }}
-                                        className="flex-1 py-3 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-white font-semibold transition-colors"
-                                    >
-                                        Cancelar
-                                    </button>
-                                    <button
-                                        onClick={confirmDeleteReport}
-                                        className="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-3 rounded-xl transition-all shadow-lg active:scale-95"
-                                    >
-                                        Excluir
-                                    </button>
-                                </div>
+            {showReportDeleteConfirm && (
+                <div className="fixed inset-0 z-[90] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+                    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-sm overflow-hidden shadow-2xl">
+                        <div className="p-6 text-center">
+                            <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Excluir Relatório?</h2>
+                            <p className="text-slate-500 mb-6 text-sm">Esta ação é permanente.</p>
+                            <div className="flex gap-3">
+                                <button onClick={() => { setShowReportDeleteConfirm(false); setReportIdToDelete(null); }} className="flex-1 py-3 text-slate-500">Cancelar</button>
+                                <button onClick={confirmDeleteReport} className="flex-1 bg-red-600 text-white font-bold py-3 rounded-xl">Excluir</button>
                             </div>
                         </div>
                     </div>
-                )
-            }
-        </div >
+                </div>
+            )}
+
+            {/* Modal de Conflito de Inventário Hoje */}
+            {showConflictModal && conflictReport && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+                    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl w-full max-w-md overflow-hidden shadow-2xl animate-in fade-in zoom-in duration-300">
+                        <div className="p-8">
+                            <div className="w-20 h-20 bg-amber-500/10 text-amber-500 rounded-3xl flex items-center justify-center mb-6">
+                                <AlertTriangle size={40} />
+                            </div>
+                            
+                            <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-3">Inventário já Existente hoje</h2>
+                            <p className="text-slate-500 dark:text-slate-400 mb-6">
+                                Já existe um inventário para o local <span className="font-bold text-slate-900 dark:text-white">"{conflictReport.locationName}"</span> realizado hoje.
+                                <br/><br/>
+                                <span className="text-sm">
+                                    Título: <span className="text-slate-700 dark:text-slate-300 font-semibold">{conflictReport.title || `Inventário #${conflictReport.sequentialId || '?'}`}</span><br/>
+                                    Iniciado em: <span className="text-slate-700 dark:text-slate-300 font-semibold">{conflictReport.createdAt?.toDate ? conflictReport.createdAt.toDate().toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'N/A'}</span>
+                                </span>
+                            </p>
+
+                            <div className="space-y-3">
+                                <button
+                                    onClick={() => {
+                                        setSelectedLocationId(pendingLocationId);
+                                        setCurrentReport(conflictReport);
+                                        setReportItems(conflictReport.items);
+                                        setTitle(conflictReport.title || '');
+                                        setShowConflictModal(false);
+                                        setIsModalOpen(true);
+                                        toast.success('Retomando o inventário existente...');
+                                    }}
+                                    className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-2xl transition-all shadow-lg flex items-center justify-center gap-2"
+                                >
+                                    <Edit2 size={20} />
+                                    Retomar / Editar Existente
+                                </button>
+                                
+                                <button
+                                    onClick={() => {
+                                        setSelectedLocationId(pendingLocationId);
+                                        setCurrentReport(null);
+                                        setReportItems([]);
+                                        setTitle('');
+                                        setShowConflictModal(false);
+                                        setIsModalOpen(true);
+                                        toast.success('Iniciando novo inventário independente.');
+                                    }}
+                                    className="w-full bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-white font-bold py-4 rounded-2xl transition-all border border-slate-200 dark:border-slate-700"
+                                >
+                                    Criar Novo (Ignorar Aviso)
+                                </button>
+
+                                <button
+                                    onClick={() => {
+                                        setSelectedLocationId('');
+                                        setShowConflictModal(false);
+                                    }}
+                                    className="w-full bg-transparent text-slate-500 font-semibold py-2 transition-colors"
+                                >
+                                    Cancelar
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
     );
 };
 

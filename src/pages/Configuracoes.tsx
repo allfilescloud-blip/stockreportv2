@@ -54,7 +54,7 @@ const Configuracoes = () => {
                 }
             };
             const loadGeneralOptions = async () => {
-                const optionsDoc = await getDoc(doc(db, 'users', user.uid, 'settings', 'general'));
+                const optionsDoc = await getDoc(doc(db, 'settings', 'general'));
                 if (optionsDoc.exists()) {
                     setGeneralOptions(prev => ({ ...prev, ...optionsDoc.data() as GeneralSettings }));
                 }
@@ -79,14 +79,18 @@ const Configuracoes = () => {
 
     const updateGeneralOption = async (key: string, value: any) => {
         if (!user) return;
+        if (!isAdmin) {
+            toast.error('Apenas administradores podem alterar regras do sistema.');
+            return;
+        }
         const newOptions = { ...generalOptions, [key]: value };
         setGeneralOptions(newOptions);
         try {
-            await setDoc(doc(db, 'users', user.uid, 'settings', 'general'), newOptions, { merge: true });
-            toast.success('Alteração salva!', { id: 'settings-general' });
+            await setDoc(doc(db, 'settings', 'general'), newOptions, { merge: true });
+            toast.success('Regra do sistema atualizada!', { id: 'settings-general' });
         } catch (error) {
             console.error('Erro ao salvar opções:', error);
-            toast.error('Erro ao salvar alterações');
+            toast.error('Erro ao salvar no banco global');
         }
     };
 

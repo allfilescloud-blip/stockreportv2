@@ -8,7 +8,7 @@ import {
     arrayRemove,
     serverTimestamp,
     deleteDoc,
-    getDoc,
+    onSnapshot,
 } from 'firebase/firestore';
 import { db, storage } from '../db/firebase';
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
@@ -80,16 +80,13 @@ const Entregas = () => {
     const [disableDecimals, setDisableDecimals] = useState(false);
 
     useEffect(() => {
-        if (user) {
-            const loadOptions = async () => {
-                const optionsDoc = await getDoc(doc(db, 'users', user.uid, 'settings', 'general'));
-                if (optionsDoc.exists()) {
-                    setDisableDecimals(optionsDoc.data().disableDecimals || false);
-                }
-            };
-            loadOptions();
-        }
-    }, [user]);
+        const unsubscribeSettings = onSnapshot(doc(db, 'settings', 'general'), (snapshot) => {
+            if (snapshot.exists()) {
+                setDisableDecimals(snapshot.data().disableDecimals || false);
+            }
+        });
+        return () => unsubscribeSettings();
+    }, []);
 
     const skuInputRef = useRef<HTMLInputElement>(null);
     const quantityInputRef = useRef<HTMLInputElement>(null);
