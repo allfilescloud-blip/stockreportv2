@@ -579,7 +579,7 @@ const Inventario = () => {
         // Determinar o ID de exibição do relatório original para o título
         const index = reports.findIndex(r => r.id === sourceReport.id);
         const displayId = sourceReport.sequentialId || (reports.length - index);
-        const newTitle = `Cópia: ${sourceReport.title || `Inventário #${displayId}`}`;
+        const newTitle = '';
 
         try {
             const newDoc = await addDoc(collection(db, 'reports'), {
@@ -592,8 +592,7 @@ const Inventario = () => {
                 sequentialId: nextSequentialId,
                 createdAt: serverTimestamp(),
                 updatedAt: serverTimestamp(),
-                status: 'in_progress',
-                details: `Clonado de: ${sourceReport.title || `Inventário #${displayId}`}`
+                status: 'in_progress'
             });
 
             const newReport = {
