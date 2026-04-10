@@ -86,6 +86,7 @@ const Inventario = () => {
     useAuth();
     const [disableDecimals, setDisableDecimals] = useState(false);
     const [defaultUnifiedLocationId, setDefaultUnifiedLocationId] = useState('');
+    const [isCloning, setIsCloning] = useState(false);
 
     useEffect(() => {
         const unsubscribeSettings = onSnapshot(doc(db, 'settings', 'general'), (snapshot) => {
@@ -474,6 +475,7 @@ const Inventario = () => {
         setTitle('');
         setSelectedLocationId('');
         setCurrentReport(null);
+        setIsCloning(false);
         toast.success("Inventário salvo com sucesso!");
     };
 
@@ -556,7 +558,7 @@ const Inventario = () => {
         setSelectedReports([]);
     };
 
-    const handleCloneReport = () => {
+    const handleCloneReport = async () => {
         if (selectedReports.length !== 1) return;
         const reportId = selectedReports[0];
         const sourceReport = reports.find(r => r.id === reportId);
@@ -567,25 +569,58 @@ const Inventario = () => {
             ...item
         }));
 
-        setReportItems(clonedItems);
+        // Calcular o próximo ID sequencial
+        const nextSequentialId = reports.length > 0
+            ? Math.max(...reports.map(r => r.sequentialId || 0)) + 1
+            : 1;
+
+        const locationObj = locations.find(l => l.id === sourceReport.locationId);
         
         // Determinar o ID de exibição do relatório original para o título
         const index = reports.findIndex(r => r.id === sourceReport.id);
         const displayId = sourceReport.sequentialId || (reports.length - index);
-        
-        setTitle(`Cópia: ${sourceReport.title || `Inventário #${displayId}`}`);
-        setSelectedLocationId(sourceReport.locationId || '');
-        
-        const cloneId = `clone-${Date.now()}`;
-        setCurrentReport({
-            id: cloneId,
-            status: 'in-progress',
-            details: `Clonado de: ${sourceReport.title || `Inventário #${displayId}`}`
-        } as any);
+        const newTitle = `Cópia: ${sourceReport.title || `Inventário #${displayId}`}`;
 
-        setSelectedReports([]);
-        setIsModalOpen(true);
-        toast.success('Inventário clonado! Revise os dados e finalize.');
+        try {
+            const newDoc = await addDoc(collection(db, 'reports'), {
+                type: 'inventory',
+                title: newTitle,
+                items: clonedItems,
+                totalItems: clonedItems.length,
+                locationId: sourceReport.locationId || '',
+                locationName: locationObj?.name || '',
+                sequentialId: nextSequentialId,
+                createdAt: serverTimestamp(),
+                updatedAt: serverTimestamp(),
+                status: 'in_progress',
+                details: `Clonado de: ${sourceReport.title || `Inventário #${displayId}`}`
+            });
+
+            const newReport = {
+                id: newDoc.id,
+                type: 'inventory',
+                title: newTitle,
+                items: clonedItems,
+                totalItems: clonedItems.length,
+                locationId: sourceReport.locationId || '',
+                locationName: locationObj?.name || '',
+                sequentialId: nextSequentialId,
+                status: 'in_progress'
+            } as Report;
+
+            setReportItems(clonedItems);
+            setTitle(newTitle);
+            setSelectedLocationId(sourceReport.locationId || '');
+            setCurrentReport(newReport);
+            setIsCloning(true);
+            
+            setSelectedReports([]);
+            setIsModalOpen(true);
+            toast.success('Inventário clonado e iniciado!');
+        } catch (err) {
+            console.error("Erro ao clonar:", err);
+            toast.error("Erro ao clonar inventário no banco.");
+        }
     };
 
     const handleShare = async (report: Report, printId: number) => {
@@ -610,6 +645,7 @@ const Inventario = () => {
         setTitle('');
         setSelectedLocationId('');
         setCurrentReport(null);
+        setIsCloning(false);
     };
 
     const handleLocationChange = (newLocationId: string) => {
@@ -926,8 +962,8 @@ const Inventario = () => {
                                 <select
                                     value={selectedLocationId}
                                     onChange={(e) => handleLocationChange(e.target.value)}
-                                    disabled={lockLocation && (currentReport !== null || reportItems.length > 0) && !currentReport?.id?.startsWith('unified-') && !currentReport?.id?.startsWith('clone-')}
-                                    className={`w-full md:w-auto bg-slate-100 dark:bg-slate-800 border border-emerald-500/30 rounded-lg px-4 py-2 text-slate-700 dark:text-slate-300 font-bold focus:ring-2 focus:ring-emerald-500 outline-none ${lockLocation && (currentReport !== null || reportItems.length > 0) && !currentReport?.id?.startsWith('unified-') && !currentReport?.id?.startsWith('clone-') ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                    disabled={lockLocation && (currentReport !== null || reportItems.length > 0) && !currentReport?.id?.startsWith('unified-') && !isCloning}
+                                    className={`w-full md:w-auto bg-slate-100 dark:bg-slate-800 border border-emerald-500/30 rounded-lg px-4 py-2 text-slate-700 dark:text-slate-300 font-bold focus:ring-2 focus:ring-emerald-500 outline-none ${lockLocation && (currentReport !== null || reportItems.length > 0) && !currentReport?.id?.startsWith('unified-') && !isCloning ? 'opacity-50 cursor-not-allowed' : ''}`}
                                 >
                                     <option value="" disabled>Selecione um Local</option>
                                     {locations.map(loc => (
