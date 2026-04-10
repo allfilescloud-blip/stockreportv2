@@ -4,6 +4,7 @@ import { collection, query, where, onSnapshot, doc, updateDoc, deleteDoc, setDoc
 import { sendPasswordResetEmail } from 'firebase/auth';
 import toast from 'react-hot-toast';
 import { db, auth } from '../../db/firebase';
+import { useSystemLog } from '../../hooks/useSystemLog';
 
 interface PendingUser {
     id: string;
@@ -34,6 +35,7 @@ export const UserManagement = ({ initialAllowReg }: { initialAllowReg: boolean }
     const [showUserDeleteConfirm, setShowUserDeleteConfirm] = useState(false);
     const [userIdToDelete, setUserIdToDelete] = useState<string | null>(null);
     const [deleteType, setDeleteType] = useState<'pending' | 'active'>('pending');
+    const { logEvent } = useSystemLog();
 
     // Controles de Permissão
     const [selectedUserForPermissions, setSelectedUserForPermissions] = useState<ActiveUser | null>(null);
@@ -86,7 +88,10 @@ export const UserManagement = ({ initialAllowReg }: { initialAllowReg: boolean }
     const handleApprove = async (userId: string) => {
         setLoadingAction(userId);
         try {
+            const userDoc = await getDoc(doc(db, 'users', userId));
+            const userEmail = userDoc.exists() ? userDoc.data().email : userId;
             await updateDoc(doc(db, 'users', userId), { approved: true });
+            await logEvent('user', 'Aprovação de Usuário', `Usuário aprova: ${userEmail}`);
         } catch (error) {
             console.error('Erro ao aprovar usuário:', error);
         } finally {
@@ -104,7 +109,10 @@ export const UserManagement = ({ initialAllowReg }: { initialAllowReg: boolean }
         if (!userIdToDelete) return;
         setLoadingAction(userIdToDelete);
         try {
+            const userDoc = await getDoc(doc(db, 'users', userIdToDelete));
+            const userEmail = userDoc.exists() ? userDoc.data().email : userIdToDelete;
             await deleteDoc(doc(db, 'users', userIdToDelete));
+            await logEvent('user', 'Exclusão de Usuário', `Usuário excluído: ${userEmail} (${deleteType})`);
             setShowUserDeleteConfirm(false);
             setUserIdToDelete(null);
         } catch (error) {
@@ -124,6 +132,7 @@ export const UserManagement = ({ initialAllowReg }: { initialAllowReg: boolean }
         setLoadingAction(user.id + '-status');
         try {
             await updateDoc(doc(db, 'users', user.id), { status: newStatus });
+            await logEvent('user', 'Alteração de Status', `Usuário ${user.email} foi ${newStatus === 'blocked' ? 'bloqueado' : 'desbloqueado'}`);
             toast.success(`Usuário ${newStatus === 'blocked' ? 'bloqueado' : 'desbloqueado'} com sucesso!`);
         } catch (error) {
             console.error('Erro ao atualizar status:', error);
@@ -143,6 +152,7 @@ export const UserManagement = ({ initialAllowReg }: { initialAllowReg: boolean }
         setLoadingAction(user.id + '-role');
         try {
             await updateDoc(doc(db, 'users', user.id), { role: newRole });
+            await logEvent('user', 'Alteração de Nível', `Nível de acesso de ${user.email} alterado para ${newRole === 'admin' ? 'Administrador' : 'Usuário Padrão'}`);
             toast.success(`Usuário agora é ${newRole === 'admin' ? 'Administrador' : 'Padrão'}.`);
         } catch (error) {
             console.error('Erro ao atualizar papel:', error);
@@ -179,6 +189,7 @@ export const UserManagement = ({ initialAllowReg }: { initialAllowReg: boolean }
         setLoadingAction(selectedUserForPermissions.id + '-perms');
         try {
             await updateDoc(doc(db, 'users', selectedUserForPermissions.id), { permissions: tempPermissions });
+            await logEvent('user', 'Alteração de Permissões', `Permissões de ${selectedUserForPermissions.email} atualizadas.`);
             toast.success('Permissões salvas com sucesso!');
             setSelectedUserForPermissions(null);
         } catch (error) {

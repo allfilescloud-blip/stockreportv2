@@ -12,9 +12,10 @@ import {
     runTransaction,
 } from 'firebase/firestore';
 import { db } from '../db/firebase';
-import { Plus, Trash2, MapPin, Calculator, ClipboardList, X, AlertTriangle, Share2, Printer, Layers, Edit2, Copy } from 'lucide-react';
+import { Plus, Trash2, MapPin, Calculator, ClipboardList, X, AlertTriangle, Share2, Printer, Layers, Edit2, Copy, Clock, CheckCheck } from 'lucide-react';
 import { shareReport, printWebReport } from '../utils/reportUtils';
 import { ProductPicker } from '../components/operational/ProductPicker';
+import { useSystemLog } from '../hooks/useSystemLog';
 import toast from 'react-hot-toast';
 import { useReports } from '../hooks/useReports';
 import { useAuth } from '../hooks/useAuth';
@@ -84,6 +85,7 @@ const Inventario = () => {
 
     const { reports, loading } = useReports<Report>('inventory', filterDate, filterLocation);
     const { isAdmin } = useAuth();
+    const { logEvent } = useSystemLog();
     const [disableDecimals, setDisableDecimals] = useState(false);
     const [defaultUnifiedLocationId, setDefaultUnifiedLocationId] = useState('');
     const [isCloning, setIsCloning] = useState(false);
@@ -226,6 +228,7 @@ const Inventario = () => {
                     updatedAt: serverTimestamp(),
                     status: 'in_progress'
                 });
+                await logEvent('report', 'Início de Inventário', `Novo inventário iniciado no local: ${locationObj?.name || 'Não definido'}`);
                 
                 setCurrentReport({
                     id: newDoc.id,
@@ -436,6 +439,7 @@ const Inventario = () => {
                 status: 'completed',
                 updatedAt: serverTimestamp()
             });
+            await logEvent('report', 'Finalização de Inventário', `Inventário #${reports.length - reports.findIndex(r => r.id === currentReport.id)} finalizado com ${itemsToSave.length} itens.`);
         } else {
             const nextSequentialId = reports.length > 0
                 ? Math.max(...reports.map(r => r.sequentialId || 0)) + 1
@@ -454,6 +458,7 @@ const Inventario = () => {
                 status: 'completed'
             });
             reportRef = newDoc;
+            await logEvent('report', 'Criação de Inventário', `Novo inventário criado diretamente com ${itemsToSave.length} itens.`);
         }
 
         for (const item of itemsToSave) {
@@ -490,8 +495,13 @@ const Inventario = () => {
 
     const confirmDeleteReport = async () => {
         if (!reportIdToDelete) return;
+        const reportToDelete = reports.find(r => r.id === reportIdToDelete);
+        const index = reports.findIndex(r => r.id === reportIdToDelete);
+        const displayId = reportToDelete?.sequentialId || (reports.length - index);
+
         try {
             await deleteDoc(doc(db, 'reports', reportIdToDelete));
+            await logEvent('report', 'Exclusão de Inventário', `Inventário #${displayId} excluído.`);
             setShowReportDeleteConfirm(false);
             setReportIdToDelete(null);
             toast.success("Inventário excluído!");
@@ -512,7 +522,7 @@ const Inventario = () => {
         });
     };
 
-    const handleMergeReports = () => {
+    const handleMergeReports = async () => {
         if (selectedReports.length < 2) return;
 
         const reportsToMerge = reports.filter(r => selectedReports.includes(r.id));
@@ -556,6 +566,7 @@ const Inventario = () => {
 
         setIsModalOpen(true);
         setSelectedReports([]);
+        await logEvent('report', 'Unificação de Inventários', `Unificados ${selectedReports.length} inventários.`);
     };
 
     const handleCloneReport = async () => {
@@ -615,6 +626,7 @@ const Inventario = () => {
             
             setSelectedReports([]);
             setIsModalOpen(true);
+            await logEvent('report', 'Clonagem de Inventário', `Inventário #${displayId} clonado para um novo relatório.`);
             toast.success('Inventário clonado e iniciado!');
         } catch (err) {
             console.error("Erro ao clonar:", err);
@@ -809,8 +821,21 @@ const Inventario = () => {
                                                 </td>
                                                 <td className="px-6 py-4 font-mono text-emerald-400">#{displayId}</td>
                                                 <td className="px-6 py-4">
-                                                    <div className="font-bold text-slate-900 dark:text-white">
-                                                        {report.title || <span className="text-slate-400 font-normal">Inventário #{displayId}</span>}
+                                                    <div className="flex items-center gap-2 flex-wrap">
+                                                        <div className="font-bold text-slate-900 dark:text-white">
+                                                            {report.title || <span className="text-slate-400 font-normal">Inventário #{displayId}</span>}
+                                                        </div>
+                                                        {report.status === 'in_progress' ? (
+                                                            <span className="flex items-center gap-1 bg-amber-500/10 text-amber-500 px-2 py-0.5 rounded-full text-[10px] font-bold border border-amber-500/20 whitespace-normal">
+                                                                <Clock size={10} />
+                                                                Rascunho
+                                                            </span>
+                                                        ) : (
+                                                            <span className="flex items-center gap-1 bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded-full text-[10px] font-bold border border-emerald-500/20 whitespace-normal">
+                                                                <CheckCheck size={10} />
+                                                                Finalizado
+                                                            </span>
+                                                        )}
                                                     </div>
                                                     {report.locationName && (
                                                         <div className="text-xs text-slate-500 mt-1 flex items-center gap-1">
@@ -884,9 +909,20 @@ const Inventario = () => {
                                                 <div className="space-y-1">
                                                     <div className="flex items-center gap-2 max-w-[200px] sm:max-w-[250px]">
                                                         <p className="font-mono text-emerald-400 font-bold shrink-0">#{displayId}</p>
-                                                        <span className="text-slate-900 dark:text-white font-semibold text-sm truncate">
-                                                            {report.title || `Inventário #${displayId}`}
-                                                        </span>
+                                                        <div className="flex items-center gap-2 overflow-hidden">
+                                                            <span className="text-slate-900 dark:text-white font-semibold text-sm truncate">
+                                                                {report.title || `Inventário #${displayId}`}
+                                                            </span>
+                                                            {report.status === 'in_progress' ? (
+                                                                <span className="bg-amber-500/10 text-amber-500 px-1.5 py-0.5 rounded-md text-[8px] font-black uppercase border border-amber-500/20 shrink-0">
+                                                                    Rascunho
+                                                                </span>
+                                                            ) : (
+                                                                <span className="bg-emerald-500/10 text-emerald-400 px-1.5 py-0.5 rounded-md text-[8px] font-black uppercase border border-emerald-500/20 shrink-0">
+                                                                    Finalizado
+                                                                </span>
+                                                            )}
+                                                        </div>
                                                     </div>
                                                     <div className="flex items-center gap-2">
                                                         <p className="text-slate-500 text-[10px]">{dateText}</p>

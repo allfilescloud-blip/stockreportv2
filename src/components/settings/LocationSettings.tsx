@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { MapPin, Plus, Edit2, Trash2, X, Check, Loader2 } from 'lucide-react';
 import { collection, query, onSnapshot, doc, updateDoc, setDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '../../db/firebase';
+import { useSystemLog } from '../../hooks/useSystemLog';
 
 interface Location {
     id: string;
@@ -15,6 +16,7 @@ export const LocationSettings = () => {
     const [editingLocation, setEditingLocation] = useState<Location | null>(null);
     const [locationName, setLocationName] = useState('');
     const [isSavingLocation, setIsSavingLocation] = useState(false);
+    const { logEvent } = useSystemLog();
 
     useEffect(() => {
         const qLocations = query(collection(db, 'locations'));
@@ -40,11 +42,13 @@ export const LocationSettings = () => {
                 await updateDoc(doc(db, 'locations', editingLocation.id), {
                     name: locationName.trim()
                 });
+                await logEvent('location', 'Alteração de Local', `Local '${editingLocation.name}' renomeado para '${locationName.trim()}'`);
             } else {
                 await setDoc(doc(collection(db, 'locations')), {
                     name: locationName.trim(),
                     createdAt: new Date()
                 });
+                await logEvent('location', 'Criação de Local', `Novo local de estoque criado: '${locationName.trim()}'`);
             }
             setShowLocationModal(false);
             setEditingLocation(null);
@@ -57,10 +61,11 @@ export const LocationSettings = () => {
         }
     };
 
-    const handleDeleteLocation = async (id: string) => {
-        if (window.confirm('Tem certeza que deseja excluir este local?')) {
+    const handleDeleteLocation = async (id: string, name: string) => {
+        if (window.confirm(`Tem certeza que deseja excluir o local '${name}'?`)) {
             try {
                 await deleteDoc(doc(db, 'locations', id));
+                await logEvent('location', 'Exclusão de Local', `Local de estoque excluído: '${name}'`);
             } catch (error) {
                 console.error('Erro ao deletar local:', error);
             }
@@ -95,7 +100,7 @@ export const LocationSettings = () => {
                             <p className="text-slate-500 font-medium">Nenhum local cadastrado.</p>
                         </div>
                     ) : (
-                        locations.map((loc) => (
+                        locations.map((loc: Location) => (
                             <div key={loc.id} className="p-4 flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-800/40 rounded-2xl transition-colors group">
                                 <div className="flex items-center gap-4">
                                     <div className="w-10 h-10 bg-blue-500/10 rounded-xl flex items-center justify-center text-blue-500 font-bold group-hover:scale-110 transition-transform">
@@ -118,7 +123,7 @@ export const LocationSettings = () => {
                                         <Edit2 size={18} />
                                     </button>
                                     <button
-                                        onClick={() => handleDeleteLocation(loc.id)}
+                                        onClick={() => handleDeleteLocation(loc.id, loc.name)}
                                         className="p-2 text-slate-400 hover:text-red-500 bg-white dark:bg-slate-900 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-xl transition-all shadow-sm border border-slate-200 dark:border-slate-700"
                                         title="Excluir Local"
                                     >

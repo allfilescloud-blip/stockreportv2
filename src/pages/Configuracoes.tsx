@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Settings as SettingsIcon, User, Shield, Bell, Info, MapPin, Database as DatabaseIcon, Sliders, AlertTriangle } from 'lucide-react';
+import { Settings as SettingsIcon, User, Shield, Bell, Info, MapPin, Database as DatabaseIcon, Sliders, AlertTriangle, ClipboardList } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { doc, setDoc, getDoc, collection, query, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '../db/firebase';
@@ -9,6 +9,8 @@ import toast from 'react-hot-toast';
 import { UserManagement } from '../components/settings/UserManagement';
 import { LocationSettings } from '../components/settings/LocationSettings';
 import { DatabaseTools } from '../components/settings/DatabaseTools';
+import { SystemLogs } from '../components/settings/SystemLogs';
+import { useSystemLog } from '../hooks/useSystemLog';
 
 interface NotificationSettings {
     lowStock: boolean;
@@ -34,6 +36,7 @@ interface Location {
 const Configuracoes = () => {
     const { user, isAdmin, allowRegistration } = useAuth();
     const { theme, setTheme } = useTheme();
+    const { logEvent } = useSystemLog();
     const [activeTab, setActiveTab] = useState('Geral');
 
     const [notifications, setNotifications] = useState<NotificationSettings>({
@@ -87,6 +90,7 @@ const Configuracoes = () => {
         setNotifications(newSettings);
         try {
             await setDoc(doc(db, 'users', user.uid, 'settings', 'notifications'), newSettings, { merge: true });
+            await logEvent('settings', 'Alteração de Notificação', `Notificação '${key}' alterada para ${value}`);
             toast.success('Notificações atualizadas!', { id: 'settings-notify' });
         } catch (error) {
             console.error('Erro ao salvar notificações:', error);
@@ -104,6 +108,7 @@ const Configuracoes = () => {
         setGeneralOptions(newOptions);
         try {
             await setDoc(doc(db, 'settings', 'general'), newOptions, { merge: true });
+            await logEvent('settings', 'Alteração de Regra', `Regra '${key}' alterada para ${value}`);
             toast.success('Regra do sistema atualizada!', { id: 'settings-general' });
         } catch (error) {
             console.error('Erro ao salvar opções:', error);
@@ -117,6 +122,7 @@ const Configuracoes = () => {
         { id: 'Notificações', title: 'Notificações', icon: Bell, description: 'Configure alertas de estoque baixo e novos relatórios' },
         { id: 'Locais', title: 'Locais de Estoque', icon: MapPin, description: 'Gerencie depósitos e prateleiras' },
         { id: 'Database', title: 'Banco de Dados', icon: DatabaseIcon, description: 'Exportar dados, limpar cache e backups', adminOnly: true },
+        { id: 'Logs', title: 'Log de Sistema', icon: ClipboardList, description: 'Histórico de ações e alterações', adminOnly: true },
         { id: 'Acessos', title: 'Segurança e Acessos', icon: Shield, description: 'Gerenciar permissões e novos cadastros', adminOnly: true },
         { id: 'Sobre', title: 'Sobre o Sistema', icon: Info, description: 'Versão 1.1.0 - StockReport Intelligence' },
     ];
@@ -372,6 +378,10 @@ const Configuracoes = () => {
 
                     {activeTab === 'Database' && isAdmin && (
                         <DatabaseTools />
+                    )}
+
+                    {activeTab === 'Logs' && isAdmin && (
+                        <SystemLogs />
                     )}
 
                     {activeTab === 'Sobre' && (

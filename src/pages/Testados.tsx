@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import toast from 'react-hot-toast';
 import {
     collection,
     addDoc,
@@ -10,12 +11,14 @@ import {
     serverTimestamp,
     deleteDoc,
     getDocs,
-    onSnapshot
+    onSnapshot,
+    runTransaction,
 } from 'firebase/firestore';
 import { db } from '../db/firebase';
-import { Plus, X, ClipboardList, Printer, Trash2, Edit2, AlertTriangle, Share2, Calculator } from 'lucide-react';
+import { Plus, X, ClipboardList, Printer, Trash2, Edit2, AlertTriangle, Share2, Calculator, Clock, CheckCheck } from 'lucide-react';
 import { shareReport, printWebReport } from '../utils/reportUtils';
 import { ProductPicker } from '../components/operational/ProductPicker';
+import { useSystemLog } from '../hooks/useSystemLog';
 import { useReports } from '../hooks/useReports';
 import { ReportSkeleton } from '../components/ReportSkeleton';
 
@@ -37,6 +40,7 @@ interface Report {
     userName?: string;
     title?: string;
     sequentialId?: number;
+    status?: 'in_progress' | 'completed';
 }
 
 const Testados = () => {
@@ -58,6 +62,7 @@ const Testados = () => {
     const [reportIdToDelete, setReportIdToDelete] = useState<string | null>(null);
 
     const { reports, loading } = useReports<Report>('tested', filterDate);
+    const { logEvent } = useSystemLog();
     const [disableDecimals, setDisableDecimals] = useState(false);
 
     useEffect(() => {
@@ -73,7 +78,20 @@ const Testados = () => {
     const quantityInputRef = useRef<HTMLInputElement>(null);
     const sumInputRef = useRef<HTMLInputElement>(null);
 
-        // Handlers handled by ProductPicker
+    useEffect(() => {
+        let unsubscribe = () => {};
+        if (currentReport) {
+            const reportRef = doc(db, 'reports', currentReport.id);
+            unsubscribe = onSnapshot(reportRef, (docSnap) => {
+                if (docSnap.exists()) {
+                    const data = docSnap.data();
+                    setReportItems(data.items || []);
+                }
+            });
+        }
+        return () => unsubscribe();
+    }, [currentReport?.id]);
+
     const addItemToReport = async () => {
         if (!selectedProduct) return;
 
@@ -106,28 +124,145 @@ const Testados = () => {
             previousCount: previousCount
         };
 
-        setReportItems([...reportItems, newItem]);
+        if (currentReport) {
+            const docRef = doc(db, 'reports', currentReport.id);
+            try {
+                await runTransaction(db, async (transaction) => {
+                    const sfDoc = await transaction.get(docRef);
+                    if (!sfDoc.exists()) return;
+                    const latestItems = sfDoc.data().items || [];
+                    const updatedItems = [...latestItems, newItem];
+                    transaction.update(docRef, { 
+                        items: updatedItems, 
+                        totalItems: updatedItems.length, 
+                        updatedAt: serverTimestamp() 
+                    });
+                });
+            } catch (err) {
+                toast.error("Erro ao salvar item no banco.");
+            }
+        } else {
+            const nextSequentialId = reports.length > 0
+                ? Math.max(...reports.map(r => r.sequentialId || 0)) + 1
+                : 1;
+            
+            try {
+                const tempItems = [newItem];
+                const newDoc = await addDoc(collection(db, 'reports'), {
+                    type: 'tested',
+                    title: title.trim(),
+                    items: tempItems,
+                    totalItems: 1,
+                    sequentialId: nextSequentialId,
+                    status: 'in_progress',
+                    createdAt: serverTimestamp(),
+                    updatedAt: serverTimestamp()
+                });
+                await logEvent('report', 'Início de Teste', `Novo teste iniciado.`);
+                
+                setCurrentReport({
+                    id: newDoc.id,
+                    type: 'tested',
+                    title: title.trim(),
+                    items: tempItems,
+                    totalItems: 1,
+                    sequentialId: nextSequentialId,
+                    status: 'in_progress',
+                    createdAt: null,
+                    updatedAt: null
+                } as Report);
+                setReportItems(tempItems);
+            } catch (err) {
+                toast.error("Erro ao iniciar relatório no banco.");
+            }
+        }
+
         setSelectedProduct(null);
         setSearchTerm('');
         setQuantity('');
         skuInputRef.current?.focus();
     };
 
-    const handleSum = () => {
+    const handleCloseModal = async () => {
+        if (currentReport && reportItems.length === 0) {
+            try {
+                await deleteDoc(doc(db, 'reports', currentReport.id));
+            } catch (err) {
+                console.error("Erro ao limpar rascunho vazio:", err);
+            }
+        }
+        setIsModalOpen(false);
+        setReportItems([]);
+        setTitle('');
+        setCurrentReport(null);
+    };
+
+    const confirmDeleteItem = async () => {
+        if (itemIndexToDelete !== null) {
+            const updatedItems = reportItems.filter((_, i) => i !== itemIndexToDelete);
+            
+            if (currentReport) {
+                const docRef = doc(db, 'reports', currentReport.id);
+                try {
+                    await updateDoc(docRef, {
+                        items: updatedItems,
+                        totalItems: updatedItems.length,
+                        updatedAt: serverTimestamp()
+                    });
+                } catch (err) {
+                    console.error("Erro ao sincronizar exclusão:", err);
+                }
+            } else {
+                setReportItems(updatedItems);
+            }
+        }
+        setShowDeleteConfirm(false);
+        setItemIndexToDelete(null);
+    };
+
+    const handleSum = async () => {
         if (summingIndex !== null && sumValue !== '') {
             const updatedItems = [...reportItems];
             updatedItems[summingIndex].currentCount += Number(sumValue);
-            setReportItems(updatedItems);
+            
+            if (currentReport) {
+                const docRef = doc(db, 'reports', currentReport.id);
+                try {
+                    await updateDoc(docRef, {
+                        items: updatedItems,
+                        updatedAt: serverTimestamp()
+                    });
+                } catch (err) {
+                    console.error("Erro ao sincronizar soma:", err);
+                }
+            } else {
+                setReportItems(updatedItems);
+            }
+            
             setSummingIndex(null);
             setSumValue('');
         }
     };
 
-    const confirmUpdate = () => {
+    const confirmUpdate = async () => {
         if (duplicateItemIndex !== null) {
             const updatedItems = [...reportItems];
             updatedItems[duplicateItemIndex].currentCount = Number(quantity) || 0;
-            setReportItems(updatedItems);
+            
+            if (currentReport) {
+                const docRef = doc(db, 'reports', currentReport.id);
+                try {
+                    await updateDoc(docRef, {
+                        items: updatedItems,
+                        updatedAt: serverTimestamp()
+                    });
+                } catch (err) {
+                    console.error("Erro ao sincronizar atualização:", err);
+                }
+            } else {
+                setReportItems(updatedItems);
+            }
+            
             setSelectedProduct(null);
             setSearchTerm('');
             setQuantity('');
@@ -137,7 +272,7 @@ const Testados = () => {
         }
     };
 
-    const saveReport = async () => {
+    const saveReport = async (statusArg: 'in_progress' | 'completed' = 'completed') => {
         if (reportItems.length === 0) return;
 
         let reportRef;
@@ -147,11 +282,13 @@ const Testados = () => {
                 title: title.trim(),
                 items: reportItems,
                 totalItems: reportItems.length,
+                status: statusArg,
                 updatedAt: serverTimestamp()
             });
+            await logEvent('report', statusArg === 'completed' ? 'Finalização de Teste' : 'Atualização de Rascunho (Teste)', `Relatório de Testados #${reports.length - reports.findIndex(r => r.id === currentReport.id)} ${statusArg === 'completed' ? 'finalizado' : 'atualizado como rascunho'} com ${reportItems.length} itens.`);
         } else {
             const nextSequentialId = reports.length > 0
-                ? Math.max(reports.length, ...reports.map(r => r.sequentialId || 0)) + 1
+                ? Math.max(...reports.map(r => r.sequentialId || 0)) + 1
                 : 1;
 
             const newDoc = await addDoc(collection(db, 'reports'), {
@@ -160,10 +297,12 @@ const Testados = () => {
                 items: reportItems,
                 totalItems: reportItems.length,
                 sequentialId: nextSequentialId,
+                status: statusArg,
                 createdAt: serverTimestamp(),
                 updatedAt: serverTimestamp()
             });
             reportRef = newDoc;
+            await logEvent('report', statusArg === 'completed' ? 'Criação de Teste' : 'Criação de Rascunho (Teste)', `Novo relatório de Testados criado como ${statusArg === 'completed' ? 'finalizado' : 'rascunho'} com ${reportItems.length} itens.`);
         }
 
         for (const item of reportItems) {
@@ -193,8 +332,13 @@ const Testados = () => {
 
     const confirmDeleteReport = async () => {
         if (!reportIdToDelete) return;
+        const reportToDelete = reports.find(r => r.id === reportIdToDelete);
+        const index = reports.findIndex(r => r.id === reportIdToDelete);
+        const displayId = reportToDelete?.sequentialId || (reports.length - index);
+
         try {
             await deleteDoc(doc(db, 'reports', reportIdToDelete));
+            await logEvent('report', 'Exclusão de Teste', `Relatório de Testados #${displayId} excluído.`);
             setShowReportDeleteConfirm(false);
             setReportIdToDelete(null);
         } catch (error) {
@@ -271,7 +415,22 @@ const Testados = () => {
                                             <tr key={report.id} className="hover:bg-slate-100/30 dark:bg-slate-800/30 transition-colors">
                                                 <td className="px-6 py-4 font-mono text-blue-400">#{displayId}</td>
                                                 <td className="px-6 py-4 font-bold text-slate-900 dark:text-white">
-                                                    {report.title || <span className="text-slate-400 font-normal">Testados #{displayId}</span>}
+                                                    <div className="flex items-center gap-2">
+                                                        <div className="font-bold text-slate-900 dark:text-white">
+                                                            {report.title || <span className="text-slate-400 font-normal">Testados #{displayId}</span>}
+                                                        </div>
+                                                        {report.status === 'in_progress' ? (
+                                                            <span className="flex items-center gap-1 bg-amber-500/10 text-amber-500 px-2 py-0.5 rounded-full text-[10px] font-bold border border-amber-500/20">
+                                                                <Clock size={10} />
+                                                                Rascunho
+                                                            </span>
+                                                        ) : (
+                                                            <span className="flex items-center gap-1 bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded-full text-[10px] font-bold border border-emerald-500/20">
+                                                                <CheckCheck size={10} />
+                                                                Finalizado
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                 </td>
                                                 <td className="px-6 py-4 text-slate-700 dark:text-slate-300">
                                                     {report.createdAt?.toDate ? (
@@ -340,11 +499,20 @@ const Testados = () => {
                                     <div key={report.id} className="p-4 space-y-4 hover:bg-slate-100/20 dark:bg-slate-800/20 transition-colors">
                                         <div className="flex justify-between items-center">
                                             <div className="space-y-1">
-                                                <div className="flex items-center gap-2 max-w-[200px] sm:max-w-[250px]">
-                                                    <p className="font-mono text-blue-400 font-bold shrink-0">#{displayId}</p>
+                                                <div className="flex items-center gap-2 overflow-hidden">
+                                                    <span className="font-mono text-blue-400 font-bold shrink-0 text-sm">#{displayId}</span>
                                                     <span className="text-slate-900 dark:text-white font-semibold text-sm truncate">
                                                         {report.title || `Testados #${displayId}`}
                                                     </span>
+                                                    {report.status === 'in_progress' ? (
+                                                        <span className="bg-amber-500/10 text-amber-500 px-1.5 py-0.5 rounded-md text-[8px] font-black uppercase border border-amber-500/20 shrink-0">
+                                                            Rascunho
+                                                        </span>
+                                                    ) : (
+                                                        <span className="bg-emerald-500/10 text-emerald-400 px-1.5 py-0.5 rounded-md text-[8px] font-black uppercase border border-emerald-500/20 shrink-0">
+                                                            Finalizado
+                                                        </span>
+                                                    )}
                                                 </div>
                                                 <p className="text-slate-500 text-[10px]">{dateText}</p>
                                             </div>
@@ -411,7 +579,7 @@ const Testados = () => {
                                 placeholder={currentReport ? `Testados #${reports.length - reports.findIndex(r => r.id === currentReport.id)}` : `Testados #${reports.length + 1}`}
                                 className="flex-1 text-xl md:text-2xl font-bold text-slate-900 dark:text-white bg-transparent border-none outline-none focus:ring-0 px-2 placeholder-slate-400 dark:placeholder-slate-600 truncate"
                             />
-                            <button onClick={() => { setIsModalOpen(false); setReportItems([]); setTitle(''); setCurrentReport(null); }} className="text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-white shrink-0">
+                            <button onClick={handleCloseModal} className="text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-white shrink-0">
                                 <X size={24} />
                             </button>
                         </div>
@@ -594,8 +762,14 @@ const Testados = () => {
                         </div>
 
                         <div className="p-6 border-t border-slate-200 dark:border-slate-800 bg-white/50 dark:bg-slate-900/50 flex flex-col md:flex-row justify-end gap-3 md:gap-4">
-                            <button onClick={() => { setIsModalOpen(false); setReportItems([]); setTitle(''); setCurrentReport(null); }} className="order-2 md:order-1 px-6 py-2 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-white transition-colors">Cancelar</button>
-                            <button onClick={saveReport} disabled={reportItems.length === 0} className="order-1 md:order-2 px-8 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold rounded-xl transition-all shadow-lg active:scale-95">Finalizar</button>
+                            <button onClick={handleCloseModal} className="order-3 md:order-1 px-6 py-2 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-white transition-colors">Cancelar</button>
+                            <button 
+                                onClick={() => saveReport('completed')} 
+                                disabled={reportItems.length === 0} 
+                                className="order-1 md:order-3 px-8 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold rounded-xl transition-all shadow-lg active:scale-95"
+                            >
+                                Finalizar
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -710,13 +884,7 @@ const Testados = () => {
                                     Cancelar
                                 </button>
                                 <button
-                                    onClick={() => {
-                                        if (itemIndexToDelete !== null) {
-                                            setReportItems(reportItems.filter((_, i) => i !== itemIndexToDelete));
-                                        }
-                                        setShowDeleteConfirm(false);
-                                        setItemIndexToDelete(null);
-                                    }}
+                                    onClick={confirmDeleteItem}
                                     className="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-3 rounded-xl transition-all shadow-lg active:scale-95"
                                 >
                                     Excluir

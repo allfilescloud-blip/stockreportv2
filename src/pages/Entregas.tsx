@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import toast from 'react-hot-toast';
 import {
     collection,
     addDoc,
@@ -9,12 +10,14 @@ import {
     serverTimestamp,
     deleteDoc,
     onSnapshot,
+    runTransaction,
 } from 'firebase/firestore';
 import { db, storage } from '../db/firebase';
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
-import { Plus, Printer, Trash2, Edit2, X, AlertTriangle, Share2, ClipboardList, Eye, Calculator, Layers, Image as ImageIcon, ChevronLeft, ChevronRight, Upload } from 'lucide-react';
+import { Plus, Printer, Trash2, Edit2, X, AlertTriangle, Share2, ClipboardList, Eye, Calculator, Layers, Image as ImageIcon, ChevronLeft, ChevronRight, Upload, Clock, CheckCheck } from 'lucide-react';
 import { shareReport, printWebReport } from '../utils/reportUtils';
 import { ProductPicker } from '../components/operational/ProductPicker';
+import { useSystemLog } from '../hooks/useSystemLog';
 import { compressImage } from '../utils/imageUtils';
 import { useReports } from '../hooks/useReports';
 import { useAuth } from '../hooks/useAuth';
@@ -39,6 +42,7 @@ interface Report {
     title?: string;
     sequentialId?: number;
     imageUrls?: string[];
+    status?: 'in_progress' | 'completed';
 }
 
 const Entregas = () => {
@@ -77,6 +81,7 @@ const Entregas = () => {
 
     const { reports, loading } = useReports<Report>('delivery', filterDate);
     const { user } = useAuth();
+    const { logEvent } = useSystemLog();
     const [disableDecimals, setDisableDecimals] = useState(false);
 
     useEffect(() => {
@@ -94,7 +99,21 @@ const Entregas = () => {
 
     // Handlers substituídos pelo ProductPicker
 
-    const addItemToReport = () => {
+    useEffect(() => {
+        let unsubscribe = () => {};
+        if (currentReport) {
+            const reportRef = doc(db, 'reports', currentReport.id);
+            unsubscribe = onSnapshot(reportRef, (docSnap) => {
+                if (docSnap.exists()) {
+                    const data = docSnap.data();
+                    setReportItems(data.items || []);
+                }
+            });
+        }
+        return () => unsubscribe();
+    }, [currentReport?.id]);
+
+    const addItemToReport = async () => {
         if (!selectedProduct) return;
 
         const existingIndex = reportItems.findIndex(i => i.productId === selectedProduct.id);
@@ -111,18 +130,124 @@ const Entregas = () => {
             currentCount: Number(quantity) || 0,
         };
 
-        setReportItems([...reportItems, newItem]);
+        if (currentReport) {
+            const docRef = doc(db, 'reports', currentReport.id);
+            try {
+                await runTransaction(db, async (transaction) => {
+                    const sfDoc = await transaction.get(docRef);
+                    if (!sfDoc.exists()) return;
+                    const latestItems = sfDoc.data().items || [];
+                    const updatedItems = [...latestItems, newItem];
+                    transaction.update(docRef, { 
+                        items: updatedItems, 
+                        totalItems: updatedItems.length, 
+                        updatedAt: serverTimestamp() 
+                    });
+                });
+            } catch (err) {
+                toast.error("Erro ao salvar item no banco.");
+            }
+        } else {
+            const nextSequentialId = reports.length > 0
+                ? Math.max(...reports.map(r => r.sequentialId || 0)) + 1
+                : 1;
+            
+            try {
+                const tempItems = [newItem];
+                const newDoc = await addDoc(collection(db, 'reports'), {
+                    type: 'delivery',
+                    title: title.trim(),
+                    items: tempItems,
+                    totalItems: 1,
+                    sequentialId: nextSequentialId,
+                    imageUrls: [],
+                    status: 'in_progress',
+                    createdAt: serverTimestamp(),
+                    updatedAt: serverTimestamp()
+                });
+                await logEvent('report', 'Início de Entrega', `Nova entrega iniciada.`);
+                
+                setCurrentReport({
+                    id: newDoc.id,
+                    type: 'delivery',
+                    title: title.trim(),
+                    items: tempItems,
+                    totalItems: 1,
+                    sequentialId: nextSequentialId,
+                    status: 'in_progress',
+                    createdAt: null,
+                    updatedAt: null
+                } as Report);
+                setReportItems(tempItems);
+            } catch (err) {
+                toast.error("Erro ao iniciar entrega no banco.");
+            }
+        }
+
         setSelectedProduct(null);
         setSearchTerm('');
         setQuantity('');
         skuInputRef.current?.focus();
     };
 
-    const handleSum = () => {
+    const handleCloseModal = async () => {
+        if (currentReport && reportItems.length === 0) {
+            try {
+                await deleteDoc(doc(db, 'reports', currentReport.id));
+            } catch (err) {
+                console.error("Erro ao limpar rascunho vazio:", err);
+            }
+        }
+        setIsModalOpen(false);
+        setReportItems([]);
+        setNotes('');
+        setTitle('');
+        setTempImages([]);
+        setCurrentReport(null);
+    };
+
+    const confirmDeleteItem = async () => {
+        if (itemIndexToDelete !== null) {
+            const updatedItems = reportItems.filter((_, i) => i !== itemIndexToDelete);
+            
+            if (currentReport) {
+                const docRef = doc(db, 'reports', currentReport.id);
+                try {
+                    await updateDoc(docRef, {
+                        items: updatedItems,
+                        totalItems: updatedItems.length,
+                        updatedAt: serverTimestamp()
+                    });
+                } catch (err) {
+                    console.error("Erro ao sincronizar exclusão:", err);
+                }
+            } else {
+                setReportItems(updatedItems);
+            }
+        }
+        setShowDeleteConfirm(false);
+        setItemIndexToDelete(null);
+    };
+
+    const handleSum = async () => {
         if (summingIndex !== null && sumValue !== '') {
             const updatedItems = [...reportItems];
             updatedItems[summingIndex].currentCount += Number(sumValue);
-            setReportItems(updatedItems);
+            
+            if (currentReport) {
+                const docRef = doc(db, 'reports', currentReport.id);
+                try {
+                    await updateDoc(docRef, {
+                        items: updatedItems,
+                        updatedAt: serverTimestamp()
+                    });
+                } catch (err) {
+                    console.error("Erro ao sincronizar soma:", err);
+                }
+            } else {
+                setReportItems(updatedItems);
+            }
+            
             setSummingIndex(null);
             setSumValue('');
         }
@@ -164,11 +289,25 @@ const Entregas = () => {
         }
     };
 
-    const confirmUpdate = () => {
+    const confirmUpdate = async () => {
         if (duplicateItemIndex !== null) {
             const updatedItems = [...reportItems];
             updatedItems[duplicateItemIndex].currentCount = Number(quantity) || 0;
-            setReportItems(updatedItems);
+            
+            if (currentReport) {
+                const docRef = doc(db, 'reports', currentReport.id);
+                try {
+                    await updateDoc(docRef, {
+                        items: updatedItems,
+                        updatedAt: serverTimestamp()
+                    });
+                } catch (err) {
+                    console.error("Erro ao sincronizar atualização:", err);
+                }
+            } else {
+                setReportItems(updatedItems);
+            }
+            
             setSelectedProduct(null);
             setSearchTerm('');
             setQuantity('');
@@ -202,16 +341,11 @@ const Entregas = () => {
         return uploadedUrls;
     };
 
-    const saveReport = async () => {
+    const saveReport = async (statusArg: 'in_progress' | 'completed' = 'completed') => {
         if (reportItems.length === 0) return;
 
         let reportId = currentReport?.id;
         let finalImageUrls: string[] = currentReport?.imageUrls || [];
-
-        // If it's a new report, we need its ID first or we create one
-        // Firestore addDoc returns a ref with an ID.
-        // We might want to upload images AFTER creating the doc if it's new, 
-        // but for existing ones we can do it during update.
 
         if (currentReport) {
             finalImageUrls = await uploadImages(currentReport.id);
@@ -222,11 +356,13 @@ const Entregas = () => {
                 totalItems: reportItems.length,
                 notes: notes,
                 imageUrls: finalImageUrls,
+                status: statusArg,
                 updatedAt: serverTimestamp()
             });
+            await logEvent('report', statusArg === 'completed' ? 'Finalização de Entrega' : 'Atualização de Rascunho (Entrega)', `Entrega #${reports.length - reports.findIndex(r => r.id === currentReport.id)} ${statusArg === 'completed' ? 'finalizada' : 'atualizada como rascunho'} com ${reportItems.length} itens.`);
         } else {
             const nextSequentialId = reports.length > 0
-                ? Math.max(reports.length, ...reports.map(r => r.sequentialId || 0)) + 1
+                ? Math.max(...reports.map(r => r.sequentialId || 0)) + 1
                 : 1;
 
             const newDoc = await addDoc(collection(db, 'reports'), {
@@ -236,11 +372,13 @@ const Entregas = () => {
                 totalItems: reportItems.length,
                 notes: notes,
                 sequentialId: nextSequentialId,
-                imageUrls: [], // Placeholder
+                imageUrls: [],
+                status: statusArg,
                 createdAt: serverTimestamp(),
                 updatedAt: serverTimestamp()
             });
             reportId = newDoc.id;
+            await logEvent('report', statusArg === 'completed' ? 'Criação de Entrega' : 'Criação de Rascunho (Entrega)', `Nova entrega criada como ${statusArg === 'completed' ? 'finalizada' : 'rascunho'} com ${reportItems.length} itens.`);
             finalImageUrls = await uploadImages(newDoc.id);
             await updateDoc(doc(db, 'reports', newDoc.id), {
                 imageUrls: finalImageUrls
@@ -276,8 +414,13 @@ const Entregas = () => {
 
     const confirmDeleteReport = async () => {
         if (!reportIdToDelete) return;
+        const reportToDelete = reports.find(r => r.id === reportIdToDelete);
+        const index = reports.findIndex(r => r.id === reportIdToDelete);
+        const displayId = reportToDelete?.sequentialId || (reports.length - index);
+
         try {
             await deleteDoc(doc(db, 'reports', reportIdToDelete));
+            await logEvent('report', 'Exclusão de Entrega', `Entrega #${displayId} excluída.`);
             setShowReportDeleteConfirm(false);
             setReportIdToDelete(null);
         } catch (error) {
@@ -318,7 +461,7 @@ const Entregas = () => {
         });
     };
 
-    const handleMergeAndPrint = () => {
+    const handleMergeAndPrint = async () => {
         if (selectedReports.length < 2) return;
 
         const reportsToMerge = reports.filter(r => selectedReports.includes(r.id));
@@ -355,6 +498,7 @@ const Entregas = () => {
         };
 
         handlePrintReport(mergedReport, 0); // O sequentialId 0 vai forçar o uso de report.title
+        await logEvent('report', 'Unificação de Entregas', `Unificadas ${selectedReports.length} entregas.`);
     };
 
     return (
@@ -439,8 +583,23 @@ const Entregas = () => {
                                                 <td className="px-6 py-4 font-mono text-purple-400">
                                                     #{displayId}
                                                 </td>
-                                                <td className="px-6 py-4 font-bold text-slate-900 dark:text-white">
-                                                    {report.title || <span className="text-slate-400 font-normal">Entrega #{displayId}</span>}
+                                                <td className="px-6 py-4 whitespace-nowrap">
+                                                    <div className="flex items-center gap-2">
+                                                        <div className="font-bold text-slate-900 dark:text-white">
+                                                            {report.title || <span className="text-slate-400 font-normal">Entrega #{displayId}</span>}
+                                                        </div>
+                                                        {report.status === 'in_progress' ? (
+                                                            <span className="flex items-center gap-1 bg-amber-500/10 text-amber-500 px-2 py-0.5 rounded-full text-[10px] font-bold border border-amber-500/20">
+                                                                <Clock size={10} />
+                                                                Rascunho
+                                                            </span>
+                                                        ) : (
+                                                            <span className="flex items-center gap-1 bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded-full text-[10px] font-bold border border-emerald-500/20">
+                                                                <CheckCheck size={10} />
+                                                                Finalizado
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                 </td>
                                                 <td className="px-6 py-4 text-slate-700 dark:text-slate-300">
                                                     {report.createdAt?.toDate ? (
@@ -529,11 +688,20 @@ const Entregas = () => {
                                                     className="w-5 h-5 text-purple-600 rounded border-slate-300 dark:border-slate-700 focus:ring-purple-500 dark:bg-slate-800 cursor-pointer"
                                                 />
                                                 <div className="space-y-1">
-                                                    <div className="flex items-center gap-2 max-w-[200px] sm:max-w-[250px]">
-                                                        <p className="font-mono text-purple-400 font-bold shrink-0">#{displayId}</p>
+                                                    <div className="flex items-center gap-2 overflow-hidden">
+                                                        <span className="font-mono text-purple-400 font-bold shrink-0 text-sm">#{displayId}</span>
                                                         <span className="text-slate-900 dark:text-white font-semibold text-sm truncate">
                                                             {report.title || `Entrega #${displayId}`}
                                                         </span>
+                                                        {report.status === 'in_progress' ? (
+                                                            <span className="bg-amber-500/10 text-amber-500 px-1.5 py-0.5 rounded-md text-[8px] font-black uppercase border border-amber-500/20 shrink-0">
+                                                                Rascunho
+                                                            </span>
+                                                        ) : (
+                                                            <span className="bg-emerald-500/10 text-emerald-400 px-1.5 py-0.5 rounded-md text-[8px] font-black uppercase border border-emerald-500/20 shrink-0">
+                                                                Finalizado
+                                                            </span>
+                                                        )}
                                                     </div>
                                                     <p className="text-slate-500 text-[10px]">{dateText}</p>
                                                 </div>
@@ -623,7 +791,7 @@ const Entregas = () => {
                                 placeholder={currentReport ? `Entrega #${reports.length - reports.findIndex(r => r.id === currentReport.id)}` : `Entrega #${reports.length + 1}`}
                                 className="flex-1 text-xl md:text-2xl font-bold text-slate-900 dark:text-white bg-transparent border-none outline-none focus:ring-0 px-2 placeholder-slate-400 dark:placeholder-slate-600 truncate"
                             />
-                            <button onClick={() => { setIsModalOpen(false); setReportItems([]); setNotes(''); setTitle(''); setCurrentReport(null); }} className="text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-white shrink-0">
+                            <button onClick={handleCloseModal} className="text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-white shrink-0">
                                 <X size={24} />
                             </button>
                         </div>
@@ -849,8 +1017,14 @@ const Entregas = () => {
                         </div>
 
                         <div className="p-6 border-t border-slate-200 dark:border-slate-800 bg-white/50 dark:bg-slate-900/50 flex flex-col md:flex-row justify-end gap-3 md:gap-4">
-                            <button onClick={() => { setIsModalOpen(false); setReportItems([]); setNotes(''); setTitle(''); setCurrentReport(null); }} className="order-2 md:order-1 px-6 py-2 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-white transition-colors">Cancelar</button>
-                            <button onClick={saveReport} disabled={reportItems.length === 0} className="order-1 md:order-2 px-8 py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white font-bold rounded-xl transition-all shadow-lg active:scale-95">Finalizar</button>
+                            <button onClick={handleCloseModal} className="order-3 md:order-1 px-6 py-2 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-white transition-colors">Cancelar</button>
+                            <button 
+                                onClick={() => saveReport('completed')} 
+                                disabled={reportItems.length === 0} 
+                                className="order-1 md:order-3 px-8 py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white font-bold rounded-xl transition-all shadow-lg active:scale-95"
+                            >
+                                Finalizar
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -965,13 +1139,7 @@ const Entregas = () => {
                                     Cancelar
                                 </button>
                                 <button
-                                    onClick={() => {
-                                        if (itemIndexToDelete !== null) {
-                                            setReportItems(reportItems.filter((_, i) => i !== itemIndexToDelete));
-                                        }
-                                        setShowDeleteConfirm(false);
-                                        setItemIndexToDelete(null);
-                                    }}
+                                    onClick={confirmDeleteItem}
                                     className="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-3 rounded-xl transition-all shadow-lg active:scale-95"
                                 >
                                     Excluir
