@@ -12,7 +12,7 @@ import {
     runTransaction,
 } from 'firebase/firestore';
 import { db } from '../db/firebase';
-import { Plus, Trash2, MapPin, Calculator, ClipboardList, X, AlertTriangle, Share2, Printer, Layers, Edit2 } from 'lucide-react';
+import { Plus, Trash2, MapPin, Calculator, ClipboardList, X, AlertTriangle, Share2, Printer, Layers, Edit2, Copy } from 'lucide-react';
 import { shareReport, printWebReport } from '../utils/reportUtils';
 import { ProductPicker } from '../components/operational/ProductPicker';
 import toast from 'react-hot-toast';
@@ -556,6 +556,38 @@ const Inventario = () => {
         setSelectedReports([]);
     };
 
+    const handleCloneReport = () => {
+        if (selectedReports.length !== 1) return;
+        const reportId = selectedReports[0];
+        const sourceReport = reports.find(r => r.id === reportId);
+        if (!sourceReport) return;
+
+        // Clonagem profunda dos itens para evitar referências compartilhadas
+        const clonedItems = sourceReport.items.map(item => ({
+            ...item
+        }));
+
+        setReportItems(clonedItems);
+        
+        // Determinar o ID de exibição do relatório original para o título
+        const index = reports.findIndex(r => r.id === sourceReport.id);
+        const displayId = sourceReport.sequentialId || (reports.length - index);
+        
+        setTitle(`Cópia: ${sourceReport.title || `Inventário #${displayId}`}`);
+        setSelectedLocationId(sourceReport.locationId || '');
+        
+        const cloneId = `clone-${Date.now()}`;
+        setCurrentReport({
+            id: cloneId,
+            status: 'in-progress',
+            details: `Clonado de: ${sourceReport.title || `Inventário #${displayId}`}`
+        } as any);
+
+        setSelectedReports([]);
+        setIsModalOpen(true);
+        toast.success('Inventário clonado! Revise os dados e finalize.');
+    };
+
     const handleShare = async (report: Report, printId: number) => {
         await shareReport(report, printId, false, false);
     };
@@ -676,6 +708,15 @@ const Inventario = () => {
                     Limpar
                 </button>
                 <div className="hidden md:block h-10 w-px bg-slate-100 dark:bg-slate-800 mx-2"></div>
+                {selectedReports.length === 1 && (
+                    <button
+                        onClick={handleCloneReport}
+                        className="w-full md:w-auto flex items-center justify-center space-x-2 bg-indigo-500 hover:bg-indigo-600 text-white px-8 py-2.5 rounded-xl transition-all shadow-lg shadow-indigo-900/20 font-bold"
+                    >
+                        <Copy size={20} />
+                        <span>Clonar</span>
+                    </button>
+                )}
                 {selectedReports.length > 1 && (
                     <button
                         onClick={handleMergeReports}
@@ -885,8 +926,8 @@ const Inventario = () => {
                                 <select
                                     value={selectedLocationId}
                                     onChange={(e) => handleLocationChange(e.target.value)}
-                                    disabled={lockLocation && (currentReport !== null || reportItems.length > 0) && !currentReport?.id?.startsWith('unified-')}
-                                    className={`w-full md:w-auto bg-slate-100 dark:bg-slate-800 border border-emerald-500/30 rounded-lg px-4 py-2 text-slate-700 dark:text-slate-300 font-bold focus:ring-2 focus:ring-emerald-500 outline-none ${lockLocation && (currentReport !== null || reportItems.length > 0) && !currentReport?.id?.startsWith('unified-') ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                    disabled={lockLocation && (currentReport !== null || reportItems.length > 0) && !currentReport?.id?.startsWith('unified-') && !currentReport?.id?.startsWith('clone-')}
+                                    className={`w-full md:w-auto bg-slate-100 dark:bg-slate-800 border border-emerald-500/30 rounded-lg px-4 py-2 text-slate-700 dark:text-slate-300 font-bold focus:ring-2 focus:ring-emerald-500 outline-none ${lockLocation && (currentReport !== null || reportItems.length > 0) && !currentReport?.id?.startsWith('unified-') && !currentReport?.id?.startsWith('clone-') ? 'opacity-50 cursor-not-allowed' : ''}`}
                                 >
                                     <option value="" disabled>Selecione um Local</option>
                                     {locations.map(loc => (
