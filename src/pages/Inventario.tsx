@@ -83,7 +83,7 @@ const Inventario = () => {
     const [pendingLocationId, setPendingLocationId] = useState('');
 
     const { reports, loading } = useReports<Report>('inventory', filterDate, filterLocation);
-    useAuth();
+    const { isAdmin } = useAuth();
     const [disableDecimals, setDisableDecimals] = useState(false);
     const [defaultUnifiedLocationId, setDefaultUnifiedLocationId] = useState('');
     const [isCloning, setIsCloning] = useState(false);
@@ -559,7 +559,7 @@ const Inventario = () => {
     };
 
     const handleCloneReport = async () => {
-        if (selectedReports.length !== 1) return;
+        if (!isAdmin || selectedReports.length !== 1) return;
         const reportId = selectedReports[0];
         const sourceReport = reports.find(r => r.id === reportId);
         if (!sourceReport) return;
@@ -744,7 +744,7 @@ const Inventario = () => {
                     Limpar
                 </button>
                 <div className="hidden md:block h-10 w-px bg-slate-100 dark:bg-slate-800 mx-2"></div>
-                {selectedReports.length === 1 && (
+                {isAdmin && selectedReports.length === 1 && (
                     <button
                         onClick={handleCloneReport}
                         className="w-full md:w-auto flex items-center justify-center space-x-2 bg-indigo-500 hover:bg-indigo-600 text-white px-8 py-2.5 rounded-xl transition-all shadow-lg shadow-indigo-900/20 font-bold"
