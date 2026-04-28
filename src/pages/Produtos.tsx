@@ -17,6 +17,7 @@ import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { useProducts } from '../contexts/ProductsContext';
 import { ScannerModal } from '../components/ScannerModal';
+import { useSystemLog } from '../hooks/useSystemLog';
 
 interface Product {
     id: string;
@@ -30,6 +31,7 @@ interface Product {
 
 const Produtos = () => {
     const { products } = useProducts() as any;
+    const { logEvent } = useSystemLog();
     const [searchTerm, setSearchTerm] = useState('');
     const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('active');
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -107,6 +109,7 @@ const Produtos = () => {
                 updatedAt: serverTimestamp(),
                 history: arrayUnion(historyEntry)
             });
+            await logEvent('settings', 'Edição de Produto', `Produto SKU: ${sku} foi atualizado.`);
         } else {
             await addDoc(collection(db, 'products'), {
                 sku,
@@ -118,6 +121,7 @@ const Produtos = () => {
                 updatedAt: serverTimestamp(),
                 history: [historyEntry]
             });
+            await logEvent('settings', 'Criação de Produto', `Novo produto criado com SKU: ${sku}`);
         }
         resetForm();
     };

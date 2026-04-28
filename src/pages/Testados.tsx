@@ -15,7 +15,7 @@ import {
     runTransaction,
 } from 'firebase/firestore';
 import { db } from '../db/firebase';
-import { Plus, X, ClipboardList, Printer, Trash2, Edit2, AlertTriangle, Share2, Calculator, Clock, CheckCheck } from 'lucide-react';
+import { Plus, X, ClipboardList, Printer, Trash2, Edit2, AlertTriangle, Share2, Calculator, Clock, CheckCheck, Loader2 } from 'lucide-react';
 import { shareReport, printWebReport } from '../utils/reportUtils';
 import { ProductPicker } from '../components/operational/ProductPicker';
 import { useSystemLog } from '../hooks/useSystemLog';
@@ -60,6 +60,7 @@ const Testados = () => {
     const [itemIndexToDelete, setItemIndexToDelete] = useState<number | null>(null);
     const [showReportDeleteConfirm, setShowReportDeleteConfirm] = useState(false);
     const [reportIdToDelete, setReportIdToDelete] = useState<string | null>(null);
+    const [isSaving, setIsSaving] = useState(false);
 
     const { reports, loading } = useReports<Report>('tested', filterDate);
     const { logEvent } = useSystemLog();
@@ -199,6 +200,7 @@ const Testados = () => {
 
     const confirmDeleteItem = async () => {
         if (itemIndexToDelete !== null) {
+            const item = reportItems[itemIndexToDelete];
             const updatedItems = reportItems.filter((_, i) => i !== itemIndexToDelete);
             
             if (currentReport) {
@@ -209,6 +211,9 @@ const Testados = () => {
                         totalItems: updatedItems.length,
                         updatedAt: serverTimestamp()
                     });
+                    const reportId = reports.findIndex(r => r.id === currentReport.id);
+                    const displayId = currentReport.sequentialId || (reports.length - reportId);
+                    await logEvent('report', 'Remoção de Item', `Item ${item.sku} removido do Relatório de Testados #${displayId}`);
                 } catch (err) {
                     console.error("Erro ao sincronizar exclusão:", err);
                 }
@@ -273,56 +278,63 @@ const Testados = () => {
     };
 
     const saveReport = async (statusArg: 'in_progress' | 'completed' = 'completed') => {
-        if (reportItems.length === 0) return;
+        if (reportItems.length === 0 || isSaving) return;
+        setIsSaving(true);
+        try {
+            let reportRef;
+            if (currentReport) {
+                reportRef = doc(db, 'reports', currentReport.id);
+                await updateDoc(reportRef, {
+                    title: title.trim(),
+                    items: reportItems,
+                    totalItems: reportItems.length,
+                    status: statusArg,
+                    updatedAt: serverTimestamp()
+                });
+                await logEvent('report', statusArg === 'completed' ? 'Finalização de Teste' : 'Atualização de Rascunho (Teste)', `Relatório de Testados #${reports.length - reports.findIndex(r => r.id === currentReport.id)} ${statusArg === 'completed' ? 'finalizado' : 'atualizado como rascunho'} com ${reportItems.length} itens.`);
+            } else {
+                const nextSequentialId = reports.length > 0
+                    ? Math.max(...reports.map(r => r.sequentialId || 0)) + 1
+                    : 1;
 
-        let reportRef;
-        if (currentReport) {
-            reportRef = doc(db, 'reports', currentReport.id);
-            await updateDoc(reportRef, {
-                title: title.trim(),
-                items: reportItems,
-                totalItems: reportItems.length,
-                status: statusArg,
-                updatedAt: serverTimestamp()
-            });
-            await logEvent('report', statusArg === 'completed' ? 'Finalização de Teste' : 'Atualização de Rascunho (Teste)', `Relatório de Testados #${reports.length - reports.findIndex(r => r.id === currentReport.id)} ${statusArg === 'completed' ? 'finalizado' : 'atualizado como rascunho'} com ${reportItems.length} itens.`);
-        } else {
-            const nextSequentialId = reports.length > 0
-                ? Math.max(...reports.map(r => r.sequentialId || 0)) + 1
-                : 1;
+                const newDoc = await addDoc(collection(db, 'reports'), {
+                    type: 'tested',
+                    title: title.trim(),
+                    items: reportItems,
+                    totalItems: reportItems.length,
+                    sequentialId: nextSequentialId,
+                    status: statusArg,
+                    createdAt: serverTimestamp(),
+                    updatedAt: serverTimestamp()
+                });
+                reportRef = newDoc;
+                await logEvent('report', statusArg === 'completed' ? 'Criação de Teste' : 'Criação de Rascunho (Teste)', `Novo relatório de Testados criado como ${statusArg === 'completed' ? 'finalizado' : 'rascunho'} com ${reportItems.length} itens.`);
+            }
 
-            const newDoc = await addDoc(collection(db, 'reports'), {
-                type: 'tested',
-                title: title.trim(),
-                items: reportItems,
-                totalItems: reportItems.length,
-                sequentialId: nextSequentialId,
-                status: statusArg,
-                createdAt: serverTimestamp(),
-                updatedAt: serverTimestamp()
-            });
-            reportRef = newDoc;
-            await logEvent('report', statusArg === 'completed' ? 'Criação de Teste' : 'Criação de Rascunho (Teste)', `Novo relatório de Testados criado como ${statusArg === 'completed' ? 'finalizado' : 'rascunho'} com ${reportItems.length} itens.`);
+            for (const item of reportItems) {
+                const historyEntry = {
+                    action: 'Teste de Qualidade',
+                    date: new Date().toISOString(),
+                    details: `Contagem realizada: ${item.currentCount} (Anterior: ${item.previousCount})`,
+                    reportId: currentReport ? currentReport.id : reportRef.id
+                };
+
+                await updateDoc(doc(db, 'products', item.productId), {
+                    history: arrayUnion(historyEntry),
+                    updatedAt: serverTimestamp()
+                });
+            }
+
+            setIsModalOpen(false);
+            setReportItems([]);
+            setTitle('');
+            setCurrentReport(null);
+        } catch (error) {
+            console.error("Erro ao salvar relatório:", error);
+            toast.error("Erro ao salvar o relatório.");
+        } finally {
+            setIsSaving(false);
         }
-
-        for (const item of reportItems) {
-            const historyEntry = {
-                action: 'Teste de Qualidade',
-                date: new Date().toISOString(),
-                details: `Contagem realizada: ${item.currentCount} (Anterior: ${item.previousCount})`,
-                reportId: currentReport ? currentReport.id : reportRef.id
-            };
-
-            await updateDoc(doc(db, 'products', item.productId), {
-                history: arrayUnion(historyEntry),
-                updatedAt: serverTimestamp()
-            });
-        }
-
-        setIsModalOpen(false);
-        setReportItems([]);
-        setTitle('');
-        setCurrentReport(null);
     };
 
     const deleteReport = async (id: string) => {
@@ -650,6 +662,7 @@ const Testados = () => {
                                                     i.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
                                                     i.description.toLowerCase().includes(searchTerm.toLowerCase())
                                                 )
+                                                .sort((a, b) => a.sku.localeCompare(b.sku, undefined, { numeric: true }))
                                                 .map((item, idx) => {
                                                     const originalIndex = reportItems.findIndex(ri => ri === item);
                                                     const diff = item.currentCount - item.previousCount;
@@ -707,6 +720,7 @@ const Testados = () => {
                                             i.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
                                             i.description.toLowerCase().includes(searchTerm.toLowerCase())
                                         )
+                                        .sort((a, b) => a.sku.localeCompare(b.sku, undefined, { numeric: true }))
                                         .map((item, idx) => {
                                             const originalIndex = reportItems.findIndex(ri => ri === item);
                                             const diff = item.currentCount - item.previousCount;
@@ -765,10 +779,11 @@ const Testados = () => {
                             <button onClick={handleCloseModal} className="order-3 md:order-1 px-6 py-2 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-white transition-colors">Cancelar</button>
                             <button 
                                 onClick={() => saveReport('completed')} 
-                                disabled={reportItems.length === 0} 
-                                className="order-1 md:order-3 px-8 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold rounded-xl transition-all shadow-lg active:scale-95"
+                                disabled={reportItems.length === 0 || isSaving} 
+                                className="order-1 md:order-3 px-8 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold rounded-xl transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2"
                             >
-                                Finalizar
+                                {isSaving && <Loader2 size={20} className="animate-spin" />}
+                                {isSaving ? 'Salvando...' : 'Finalizar'}
                             </button>
                         </div>
                     </div>

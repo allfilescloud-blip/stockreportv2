@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Database, Download, Upload, Trash2, Loader2, AlertCircle, History as HistoryIcon } from 'lucide-react';
+import { Database, Download, Upload, Trash2, Loader2, AlertCircle, History as HistoryIcon, ClipboardList } from 'lucide-react';
 import { collection, getDocs, doc, setDoc, writeBatch } from 'firebase/firestore';
 import { db } from '../../db/firebase';
 
@@ -11,7 +11,7 @@ export const DatabaseTools = () => {
     const [showImportConfirm, setShowImportConfirm] = useState(false);
     const [importFile, setImportFile] = useState<File | null>(null);
     const [showPurgeConfirm, setShowPurgeConfirm] = useState(false);
-    const [purgeType, setPurgeType] = useState<'reports' | 'history' | null>(null);
+    const [purgeType, setPurgeType] = useState<'reports' | 'history' | 'system_logs' | null>(null);
 
     const handleExportBackup = async () => {
         setIsExporting(true);
@@ -83,7 +83,7 @@ export const DatabaseTools = () => {
         }
     };
 
-    const handlePurgeData = async (type: 'reports' | 'history') => {
+    const handlePurgeData = async (type: 'reports' | 'history' | 'system_logs') => {
         setPurgeType(type);
         setShowPurgeConfirm(true);
     };
@@ -128,7 +128,7 @@ export const DatabaseTools = () => {
                 }
 
                 alert(`${deletedCount} relatórios antigos foram removidos com segurança via batch.`);
-            } else {
+            } else if (purgeType === 'history') {
                 const snapshot = await getDocs(collection(db, 'products'));
 
                 let batch = writeBatch(db);
@@ -164,6 +164,28 @@ export const DatabaseTools = () => {
                 }
 
                 alert(`Histórico limpo eficientemente em ${updatedCount} produtos.`);
+            } else if (purgeType === 'system_logs') {
+                const snapshot = await getDocs(collection(db, 'system_logs'));
+                let batch = writeBatch(db);
+                let opsCount = 0;
+
+                for (const docSnap of snapshot.docs) {
+                    batch.delete(doc(db, 'system_logs', docSnap.id));
+                    opsCount++;
+                    deletedCount++;
+
+                    if (opsCount === 500) {
+                        await batch.commit();
+                        batch = writeBatch(db);
+                        opsCount = 0;
+                    }
+                }
+
+                if (opsCount > 0) {
+                    await batch.commit();
+                }
+
+                alert(`${deletedCount} registros de log foram removidos.`);
             }
         } catch (error) {
             console.error('Erro na limpeza de dados:', error);
@@ -256,6 +278,7 @@ export const DatabaseTools = () => {
                                 onChange={(e) => setPurgeDays(Number(e.target.value))}
                                 className="bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl px-4 py-2 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500 min-w-[120px]"
                             >
+                                <option value={0}>Tudo (Apagar tudo)</option>
                                 <option value={30}>30 Dias</option>
                                 <option value={90}>90 Dias</option>
                                 <option value={180}>180 Dias</option>
@@ -286,6 +309,18 @@ export const DatabaseTools = () => {
                             <div>
                                 <p className="font-bold text-sm">Limpar Histórico</p>
                                 <p className="text-[10px] opacity-60">Remove logs antigos dentro dos produtos</p>
+                            </div>
+                        </button>
+
+                        <button
+                            onClick={() => handlePurgeData('system_logs')}
+                            disabled={isPurging}
+                            className="p-4 bg-slate-100 dark:bg-slate-800 hover:bg-red-500/10 border border-slate-300 dark:border-slate-700 hover:border-red-500/30 text-slate-700 dark:text-slate-300 hover:text-red-400 rounded-2xl transition-all flex flex-col items-center gap-2 text-center group disabled:opacity-50"
+                        >
+                            <ClipboardList size={24} className="group-hover:scale-110 transition-transform" />
+                            <div>
+                                <p className="font-bold text-sm">Limpar Log de Sistema</p>
+                                <p className="text-[10px] opacity-60">Remove todos os registros da auditoria global</p>
                             </div>
                         </button>
                     </div>
@@ -336,7 +371,7 @@ export const DatabaseTools = () => {
                             </div>
                             <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Limpar Dados?</h2>
                             <p className="text-slate-500 dark:text-slate-400 mb-6 text-sm">
-                                Tem certeza que deseja deletar {purgeType === 'reports' ? 'RELATÓRIOS' : 'HISTÓRICOS'} com mais de {purgeDays} dias? Esta ação é irreversível.
+                                Tem certeza que deseja deletar {purgeType === 'reports' ? 'RELATÓRIOS' : purgeType === 'history' ? 'HISTÓRICOS' : 'LOGS DE SISTEMA'} {purgeType !== 'system_logs' && (purgeDays === 0 ? 'INTEGRALMENTE' : `com mais de ${purgeDays} dias`)}? Esta ação é irreversível.
                             </p>
                             <div className="flex gap-3">
                                 <button

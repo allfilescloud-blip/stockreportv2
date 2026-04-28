@@ -5,14 +5,15 @@ import { useAuth } from './useAuth';
 export const useSystemLog = () => {
     const { user } = useAuth();
 
-    const logEvent = async (type: 'report' | 'settings' | 'auth' | 'location', action: string, details: string) => {
-        if (!user) return;
+    const logEvent = async (type: 'report' | 'settings' | 'auth' | 'location' | 'user', action: string, details: string, overrideUser?: any) => {
+        const currentUser = overrideUser || user;
+        if (!currentUser) return;
         try {
             await addDoc(collection(db, 'system_logs'), {
                 timestamp: serverTimestamp(),
-                userId: user.uid,
-                userEmail: user.email,
-                userName: user.displayName || user.email?.split('@')[0] || 'Usuário',
+                userId: currentUser.uid,
+                userEmail: currentUser.email,
+                userName: currentUser.displayName || currentUser.email?.split('@')[0] || 'Usuário',
                 type,
                 action,
                 details

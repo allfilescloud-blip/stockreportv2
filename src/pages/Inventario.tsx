@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import {
     collection,
     addDoc,
@@ -10,9 +10,13 @@ import {
     deleteDoc,
     onSnapshot,
     runTransaction,
+    where,
+    orderBy,
+    limit,
+    getDocs
 } from 'firebase/firestore';
 import { db } from '../db/firebase';
-import { Plus, Trash2, MapPin, Calculator, ClipboardList, X, AlertTriangle, Share2, Printer, Layers, Edit2, Copy, Clock, CheckCheck } from 'lucide-react';
+import { Plus, Trash2, MapPin, Calculator, ClipboardList, X, AlertTriangle, Share2, Printer, Layers, Edit2, Copy, Clock, CheckCheck, Loader2 } from 'lucide-react';
 import { shareReport, printWebReport } from '../utils/reportUtils';
 import { ProductPicker } from '../components/operational/ProductPicker';
 import { useSystemLog } from '../hooks/useSystemLog';
@@ -89,6 +93,19 @@ const Inventario = () => {
     const [disableDecimals, setDisableDecimals] = useState(false);
     const [defaultUnifiedLocationId, setDefaultUnifiedLocationId] = useState('');
     const [isCloning, setIsCloning] = useState(false);
+    const [isSaving, setIsSaving] = useState(false);
+    
+    const filteredAndSortedItems = useMemo(() => {
+        if (!searchTerm) {
+            return [...reportItems].sort((a, b) => a.sku.localeCompare(b.sku, undefined, { numeric: true }));
+        }
+        return reportItems
+            .filter(item => 
+                item.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                item.description.toLowerCase().includes(searchTerm.toLowerCase())
+            )
+            .sort((a, b) => a.sku.localeCompare(b.sku, undefined, { numeric: true }));
+    }, [reportItems, searchTerm]);
 
     useEffect(() => {
         const unsubscribeSettings = onSnapshot(doc(db, 'settings', 'general'), (snapshot) => {
@@ -255,6 +272,46 @@ const Inventario = () => {
         skuInputRef.current?.focus();
     };
 
+    const refreshPreviousCounts = async (locationId: string, items: ReportItem[]) => {
+        if (!locationId || items.length === 0) return items;
+
+        // 1. Tentar encontrar localmente primeiro (mais rápido)
+        let previousReport = reports.find(r => 
+            r.locationId === locationId && 
+            r.status === 'completed' &&
+            r.id !== currentReport?.id
+        );
+
+        // 2. Se não encontrar (pode estar filtrado), buscar no Firestore
+        if (!previousReport) {
+            const q = query(
+                collection(db, 'reports'),
+                where('type', '==', 'inventory'),
+                where('locationId', '==', locationId),
+                where('status', '==', 'completed'),
+                orderBy('createdAt', 'desc'),
+                limit(1)
+            );
+            try {
+                const snapshot = await getDocs(q);
+                if (!snapshot.empty) {
+                    previousReport = { id: snapshot.docs[0].id, ...snapshot.docs[0].data() } as any;
+                }
+            } catch (err) {
+                console.error("Erro ao buscar relatório anterior:", err);
+            }
+        }
+
+        if (previousReport) {
+            return items.map(item => {
+                const prevItem = previousReport!.items.find((i: any) => i.productId === item.productId || i.sku === item.sku);
+                return { ...item, previousCount: prevItem ? prevItem.currentCount : 0 };
+            });
+        }
+
+        return items.map(item => ({ ...item, previousCount: 0 }));
+    };
+
     const handleSum = async () => {
         if (summingIndex !== null && sumValue !== '') {
             const item = reportItems[summingIndex];
@@ -363,6 +420,9 @@ const Inventario = () => {
                             updatedAt: serverTimestamp() 
                         });
                     });
+                    const reportId = reports.findIndex(r => r.id === currentReport.id);
+                    const displayId = currentReport.sequentialId || (reports.length - reportId);
+                    await logEvent('report', 'Remoção de Item', `Item ${item.sku} removido do Inventário #${displayId}`);
                 } catch (error) { toast.error("Erro ao excluir item do banco!"); return; }
             } else {
                 setReportItems(reportItems.filter((_, i) => i !== index));
@@ -413,75 +473,82 @@ const Inventario = () => {
     };
 
     const executeFinalSave = async (itemsToSave: ReportItem[]) => {
-        if (itemsToSave.length === 0) return;
+        if (itemsToSave.length === 0 || isSaving) return;
+        setIsSaving(true);
+        try {
+            if (currentReport?.id.startsWith('unified-') && !selectedLocationId) {
+                toast.error("A seleção de um local é obrigatória para salvar relatórios unificados.");
+                return;
+            }
 
-        if (currentReport?.id.startsWith('unified-') && !selectedLocationId) {
-            toast.error("A seleção de um local é obrigatória para salvar relatórios unificados.");
-            return;
+            let reportRef;
+            const locationObj = locations.find(l => l.id === selectedLocationId);
+
+            let finalLocationName = locationObj?.name || '';
+            if (currentReport?.id.startsWith('unified-') && currentReport.locationName) {
+                finalLocationName = finalLocationName ? `${finalLocationName} (${currentReport.locationName})` : currentReport.locationName;
+            }
+
+            if (currentReport && !currentReport.id.startsWith('unified-')) {
+                reportRef = doc(db, 'reports', currentReport.id);
+                await updateDoc(reportRef, {
+                    title: title.trim(),
+                    items: itemsToSave,
+                    totalItems: itemsToSave.length,
+                    locationId: selectedLocationId,
+                    locationName: finalLocationName,
+                    status: 'completed',
+                    updatedAt: serverTimestamp()
+                });
+                await logEvent('report', 'Finalização de Inventário', `Inventário #${reports.length - reports.findIndex(r => r.id === currentReport.id)} finalizado com ${itemsToSave.length} itens.`);
+            } else {
+                const nextSequentialId = reports.length > 0
+                    ? Math.max(...reports.map(r => r.sequentialId || 0)) + 1
+                    : 1;
+
+                const newDoc = await addDoc(collection(db, 'reports'), {
+                    type: 'inventory',
+                    title: title.trim(),
+                    items: itemsToSave,
+                    totalItems: itemsToSave.length,
+                    locationId: selectedLocationId,
+                    locationName: finalLocationName,
+                    sequentialId: nextSequentialId,
+                    createdAt: serverTimestamp(),
+                    updatedAt: serverTimestamp(),
+                    status: 'completed'
+                });
+                reportRef = newDoc;
+                await logEvent('report', 'Criação de Inventário', `Novo inventário criado diretamente com ${itemsToSave.length} itens.`);
+            }
+
+            for (const item of itemsToSave) {
+                const historyEntry = {
+                    action: 'Inventário',
+                    date: new Date().toISOString(),
+                    details: `Contagem realizada: ${item.currentCount} (Anterior: ${item.previousCount})`,
+                    reportId: currentReport ? currentReport.id : reportRef.id
+                };
+
+                await updateDoc(doc(db, 'products', item.productId), {
+                    history: arrayUnion(historyEntry),
+                    updatedAt: serverTimestamp()
+                });
+            }
+
+            setIsModalOpen(false);
+            setReportItems([]);
+            setTitle('');
+            setSelectedLocationId('');
+            setCurrentReport(null);
+            setIsCloning(false);
+            toast.success("Inventário salvo com sucesso!");
+        } catch (error) {
+            console.error("Erro ao salvar relatório:", error);
+            toast.error("Erro ao salvar o relatório.");
+        } finally {
+            setIsSaving(false);
         }
-
-        let reportRef;
-        const locationObj = locations.find(l => l.id === selectedLocationId);
-
-        let finalLocationName = locationObj?.name || '';
-        if (currentReport?.id.startsWith('unified-') && currentReport.locationName) {
-            finalLocationName = finalLocationName ? `${finalLocationName} (${currentReport.locationName})` : currentReport.locationName;
-        }
-
-        if (currentReport && !currentReport.id.startsWith('unified-')) {
-            reportRef = doc(db, 'reports', currentReport.id);
-            await updateDoc(reportRef, {
-                title: title.trim(),
-                items: itemsToSave,
-                totalItems: itemsToSave.length,
-                locationId: selectedLocationId,
-                locationName: finalLocationName,
-                status: 'completed',
-                updatedAt: serverTimestamp()
-            });
-            await logEvent('report', 'Finalização de Inventário', `Inventário #${reports.length - reports.findIndex(r => r.id === currentReport.id)} finalizado com ${itemsToSave.length} itens.`);
-        } else {
-            const nextSequentialId = reports.length > 0
-                ? Math.max(...reports.map(r => r.sequentialId || 0)) + 1
-                : 1;
-
-            const newDoc = await addDoc(collection(db, 'reports'), {
-                type: 'inventory',
-                title: title.trim(),
-                items: itemsToSave,
-                totalItems: itemsToSave.length,
-                locationId: selectedLocationId,
-                locationName: finalLocationName,
-                sequentialId: nextSequentialId,
-                createdAt: serverTimestamp(),
-                updatedAt: serverTimestamp(),
-                status: 'completed'
-            });
-            reportRef = newDoc;
-            await logEvent('report', 'Criação de Inventário', `Novo inventário criado diretamente com ${itemsToSave.length} itens.`);
-        }
-
-        for (const item of itemsToSave) {
-            const historyEntry = {
-                action: 'Inventário',
-                date: new Date().toISOString(),
-                details: `Contagem realizada: ${item.currentCount} (Anterior: ${item.previousCount})`,
-                reportId: currentReport ? currentReport.id : reportRef.id
-            };
-
-            await updateDoc(doc(db, 'products', item.productId), {
-                history: arrayUnion(historyEntry),
-                updatedAt: serverTimestamp()
-            });
-        }
-
-        setIsModalOpen(false);
-        setReportItems([]);
-        setTitle('');
-        setSelectedLocationId('');
-        setCurrentReport(null);
-        setIsCloning(false);
-        toast.success("Inventário salvo com sucesso!");
     };
 
     const saveReport = async () => {
@@ -539,12 +606,20 @@ const Inventario = () => {
             });
         });
 
-        const mergedItems = Array.from(mergedItemsMap.values());
+        let mergedItems = Array.from(mergedItemsMap.values());
         const uniqueLocations = Array.from(new Set(reportsToMerge.map(r => r.locationName).filter(Boolean)));
+
+        const targetLocationId = defaultUnifiedLocationId || '';
+        const targetLocation = locations.find(l => l.id === targetLocationId);
+        
+        // Buscar contagem anterior para o local padrão
+        if (targetLocationId) {
+            mergedItems = await refreshPreviousCounts(targetLocationId, mergedItems);
+        }
 
         setReportItems(mergedItems);
         setTitle(`Inventários Unificados (${selectedReports.length})`);
-        setSelectedLocationId(defaultUnifiedLocationId || '');
+        setSelectedLocationId(targetLocationId);
 
         const unifiedNames = reportsToMerge.map(r => {
             const index = reports.findIndex(orig => orig.id === r.id);
@@ -560,7 +635,8 @@ const Inventario = () => {
             items: mergedItems,
             createdAt: null as any,
             updatedAt: null as any,
-            locationName: uniqueLocations.join(', '),
+            locationId: targetLocationId,
+            locationName: targetLocation ? targetLocation.name : uniqueLocations.join(', '),
             notes: `Relatório de inventários unificados. Origens consolidadas: ${unifiedNames.join(' | ')}`
         });
 
@@ -598,8 +674,8 @@ const Inventario = () => {
                 title: newTitle,
                 items: clonedItems,
                 totalItems: clonedItems.length,
-                locationId: sourceReport.locationId || '',
-                locationName: locationObj?.name || '',
+                locationId: '',
+                locationName: '',
                 sequentialId: nextSequentialId,
                 createdAt: serverTimestamp(),
                 updatedAt: serverTimestamp(),
@@ -612,15 +688,15 @@ const Inventario = () => {
                 title: newTitle,
                 items: clonedItems,
                 totalItems: clonedItems.length,
-                locationId: sourceReport.locationId || '',
-                locationName: locationObj?.name || '',
+                locationId: '',
+                locationName: '',
                 sequentialId: nextSequentialId,
                 status: 'in_progress'
             } as Report;
 
             setReportItems(clonedItems);
             setTitle(newTitle);
-            setSelectedLocationId(sourceReport.locationId || '');
+            setSelectedLocationId('');
             setCurrentReport(newReport);
             setIsCloning(true);
             
@@ -659,7 +735,7 @@ const Inventario = () => {
         setIsCloning(false);
     };
 
-    const handleLocationChange = (newLocationId: string) => {
+    const handleLocationChange = async (newLocationId: string) => {
         if (!newLocationId) {
             setSelectedLocationId('');
             return;
@@ -695,21 +771,7 @@ const Inventario = () => {
         }
 
         if (reportItems.length > 0) {
-            const previousReport = reports.find(r => 
-                r.locationId === newLocationId &&
-                r.id !== currentReport?.id &&
-                r.status !== 'in_progress'
-            );
-
-            const updatedItems = reportItems.map(item => {
-                let previousCount = 0;
-                if (previousReport) {
-                    const prevItem = previousReport.items.find((i: any) => i.productId === item.productId || i.sku === item.sku);
-                    previousCount = prevItem ? prevItem.currentCount : 0;
-                }
-                return { ...item, previousCount };
-            });
-
+            const updatedItems = await refreshPreviousCounts(newLocationId, reportItems);
             setReportItems(updatedItems);
         }
     };
@@ -1079,10 +1141,11 @@ const Inventario = () => {
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-200 dark:divide-slate-800 bg-white/30 dark:bg-slate-900/30">
-                                            {reportItems.map((item, idx) => {
+                                            {filteredAndSortedItems.map((item, idx) => {
                                                 const diff = item.currentCount - item.previousCount;
+                                                const originalIdx = reportItems.findIndex(ri => ri.sku === item.sku);
                                                 return (
-                                                    <tr key={idx}>
+                                                    <tr key={item.sku}>
                                                         <td className="px-6 py-4">
                                                             <p className="font-mono text-emerald-400">{item.sku}</p>
                                                             <p className="text-slate-500 text-xs truncate max-w-[200px]">{item.description}</p>
@@ -1096,7 +1159,7 @@ const Inventario = () => {
                                                             <div className="flex justify-end gap-2">
                                                                 <button
                                                                     onClick={() => {
-                                                                        setSummingIndex(idx);
+                                                                        setSummingIndex(originalIdx);
                                                                         setSumValue('');
                                                                     }}
                                                                     className="text-emerald-500 hover:text-emerald-400 p-1"
@@ -1106,7 +1169,7 @@ const Inventario = () => {
                                                                 </button>
                                                                 <button
                                                                     onClick={() => {
-                                                                        setItemIndexToDelete(idx);
+                                                                        setItemIndexToDelete(originalIdx);
                                                                         setShowDeleteConfirm(true);
                                                                     }}
                                                                     className="text-slate-600 hover:text-red-400 p-1"
@@ -1119,7 +1182,7 @@ const Inventario = () => {
                                                     </tr>
                                                 );
                                             })}
-                                            {reportItems.length === 0 && (
+                                            {filteredAndSortedItems.length === 0 && (
                                                 <tr>
                                                     <td colSpan={5} className="px-6 py-12 text-center text-slate-600 italic">
                                                         Nenhum item adicionado ainda.
@@ -1131,10 +1194,11 @@ const Inventario = () => {
                                 </div>
 
                                 <div className="md:hidden space-y-3">
-                                    {reportItems.map((item, idx) => {
+                                    {filteredAndSortedItems.map((item, idx) => {
                                         const diff = item.currentCount - item.previousCount;
+                                        const originalIdx = reportItems.findIndex(ri => ri.sku === item.sku);
                                         return (
-                                            <div key={idx} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 flex justify-between items-center shadow-sm">
+                                            <div key={item.sku} className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 flex justify-between items-center shadow-sm">
                                                 <div className="flex-1 min-w-0 pr-4">
                                                     <p className="font-mono text-emerald-400 font-bold text-sm truncate">{item.sku}</p>
                                                     <p className="text-slate-500 text-[10px] truncate">{item.description}</p>
@@ -1155,7 +1219,7 @@ const Inventario = () => {
                                                 <div className="flex flex-col gap-2">
                                                     <button
                                                         onClick={() => {
-                                                            setSummingIndex(idx);
+                                                            setSummingIndex(originalIdx);
                                                             setSumValue('');
                                                         }}
                                                         className="p-3 bg-emerald-500/10 text-emerald-500 rounded-lg active:scale-95 transition-all"
@@ -1164,7 +1228,7 @@ const Inventario = () => {
                                                     </button>
                                                     <button
                                                         onClick={() => {
-                                                            setItemIndexToDelete(idx);
+                                                            setItemIndexToDelete(originalIdx);
                                                             setShowDeleteConfirm(true);
                                                         }}
                                                         className="p-3 bg-red-400/10 text-red-500 rounded-lg active:scale-95 transition-all"
@@ -1188,10 +1252,11 @@ const Inventario = () => {
                             </button>
                             <button
                                 onClick={saveReport}
-                                disabled={reportItems.length === 0}
-                                className="order-1 md:order-2 px-8 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold rounded-xl transition-all shadow-lg active:scale-95"
+                                disabled={reportItems.length === 0 || isSaving}
+                                className="order-1 md:order-2 px-8 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold rounded-xl transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2"
                             >
-                                Finalizar Relatório
+                                {isSaving && <Loader2 size={20} className="animate-spin" />}
+                                {isSaving ? 'Salvando...' : 'Finalizar Relatório'}
                             </button>
                         </div>
                     </div>

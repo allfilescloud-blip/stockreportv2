@@ -14,7 +14,7 @@ import {
 } from 'firebase/firestore';
 import { db, storage } from '../db/firebase';
 import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage';
-import { Plus, Printer, Trash2, Edit2, X, AlertTriangle, Share2, ClipboardList, Eye, Calculator, Layers, Image as ImageIcon, ChevronLeft, ChevronRight, Upload, Clock, CheckCheck } from 'lucide-react';
+import { Plus, Printer, Trash2, Edit2, X, AlertTriangle, Share2, ClipboardList, Eye, Calculator, Layers, Image as ImageIcon, ChevronLeft, ChevronRight, Upload, Clock, CheckCheck, Loader2 } from 'lucide-react';
 import { shareReport, printWebReport } from '../utils/reportUtils';
 import { ProductPicker } from '../components/operational/ProductPicker';
 import { useSystemLog } from '../hooks/useSystemLog';
@@ -78,6 +78,7 @@ const Entregas = () => {
     const [showShareConfirm, setShowShareConfirm] = useState(false);
     const [reportToShare, setReportToShare] = useState<Report | null>(null);
     const [printIdToShare, setPrintIdToShare] = useState<number>(0);
+    const [isSaving, setIsSaving] = useState(false);
 
     const { reports, loading } = useReports<Report>('delivery', filterDate);
     const { user } = useAuth();
@@ -208,6 +209,7 @@ const Entregas = () => {
 
     const confirmDeleteItem = async () => {
         if (itemIndexToDelete !== null) {
+            const item = reportItems[itemIndexToDelete];
             const updatedItems = reportItems.filter((_, i) => i !== itemIndexToDelete);
             
             if (currentReport) {
@@ -218,6 +220,9 @@ const Entregas = () => {
                         totalItems: updatedItems.length,
                         updatedAt: serverTimestamp()
                     });
+                    const reportId = reports.findIndex(r => r.id === currentReport.id);
+                    const displayId = currentReport.sequentialId || (reports.length - reportId);
+                    await logEvent('report', 'Remoção de Item', `Item ${item.sku} removido da Entrega #${displayId}`);
                 } catch (err) {
                     console.error("Erro ao sincronizar exclusão:", err);
                 }
@@ -342,69 +347,76 @@ const Entregas = () => {
     };
 
     const saveReport = async (statusArg: 'in_progress' | 'completed' = 'completed') => {
-        if (reportItems.length === 0) return;
+        if (reportItems.length === 0 || isSaving) return;
+        setIsSaving(true);
+        try {
+            let reportId = currentReport?.id;
+            let finalImageUrls: string[] = currentReport?.imageUrls || [];
 
-        let reportId = currentReport?.id;
-        let finalImageUrls: string[] = currentReport?.imageUrls || [];
+            if (currentReport) {
+                finalImageUrls = await uploadImages(currentReport.id);
+                const reportRef = doc(db, 'reports', currentReport.id);
+                await updateDoc(reportRef, {
+                    title: title.trim(),
+                    items: reportItems,
+                    totalItems: reportItems.length,
+                    notes: notes,
+                    imageUrls: finalImageUrls,
+                    status: statusArg,
+                    updatedAt: serverTimestamp()
+                });
+                await logEvent('report', statusArg === 'completed' ? 'Finalização de Entrega' : 'Atualização de Rascunho (Entrega)', `Entrega #${reports.length - reports.findIndex(r => r.id === currentReport.id)} ${statusArg === 'completed' ? 'finalizada' : 'atualizada como rascunho'} com ${reportItems.length} itens.`);
+            } else {
+                const nextSequentialId = reports.length > 0
+                    ? Math.max(...reports.map(r => r.sequentialId || 0)) + 1
+                    : 1;
 
-        if (currentReport) {
-            finalImageUrls = await uploadImages(currentReport.id);
-            const reportRef = doc(db, 'reports', currentReport.id);
-            await updateDoc(reportRef, {
-                title: title.trim(),
-                items: reportItems,
-                totalItems: reportItems.length,
-                notes: notes,
-                imageUrls: finalImageUrls,
-                status: statusArg,
-                updatedAt: serverTimestamp()
-            });
-            await logEvent('report', statusArg === 'completed' ? 'Finalização de Entrega' : 'Atualização de Rascunho (Entrega)', `Entrega #${reports.length - reports.findIndex(r => r.id === currentReport.id)} ${statusArg === 'completed' ? 'finalizada' : 'atualizada como rascunho'} com ${reportItems.length} itens.`);
-        } else {
-            const nextSequentialId = reports.length > 0
-                ? Math.max(...reports.map(r => r.sequentialId || 0)) + 1
-                : 1;
+                const newDoc = await addDoc(collection(db, 'reports'), {
+                    type: 'delivery',
+                    title: title.trim(),
+                    items: reportItems,
+                    totalItems: reportItems.length,
+                    notes: notes,
+                    sequentialId: nextSequentialId,
+                    imageUrls: [],
+                    status: statusArg,
+                    createdAt: serverTimestamp(),
+                    updatedAt: serverTimestamp()
+                });
+                reportId = newDoc.id;
+                await logEvent('report', statusArg === 'completed' ? 'Criação de Entrega' : 'Criação de Rascunho (Entrega)', `Nova entrega criada como ${statusArg === 'completed' ? 'finalizada' : 'rascunho'} com ${reportItems.length} itens.`);
+                finalImageUrls = await uploadImages(newDoc.id);
+                await updateDoc(doc(db, 'reports', newDoc.id), {
+                    imageUrls: finalImageUrls
+                });
+            }
 
-            const newDoc = await addDoc(collection(db, 'reports'), {
-                type: 'delivery',
-                title: title.trim(),
-                items: reportItems,
-                totalItems: reportItems.length,
-                notes: notes,
-                sequentialId: nextSequentialId,
-                imageUrls: [],
-                status: statusArg,
-                createdAt: serverTimestamp(),
-                updatedAt: serverTimestamp()
-            });
-            reportId = newDoc.id;
-            await logEvent('report', statusArg === 'completed' ? 'Criação de Entrega' : 'Criação de Rascunho (Entrega)', `Nova entrega criada como ${statusArg === 'completed' ? 'finalizada' : 'rascunho'} com ${reportItems.length} itens.`);
-            finalImageUrls = await uploadImages(newDoc.id);
-            await updateDoc(doc(db, 'reports', newDoc.id), {
-                imageUrls: finalImageUrls
-            });
+            for (const item of reportItems) {
+                const historyEntry = {
+                    action: 'Entrega (Recebimento)',
+                    date: new Date().toISOString(),
+                    details: `Quantidade recebida: ${item.currentCount}`,
+                    reportId: reportId
+                };
+
+                await updateDoc(doc(db, 'products', item.productId), {
+                    history: arrayUnion(historyEntry),
+                    updatedAt: serverTimestamp()
+                });
+            }
+
+            setIsModalOpen(false);
+            setReportItems([]);
+            setNotes('');
+            setTitle('');
+            setCurrentReport(null);
+            setTempImages([]);
+        } catch (error) {
+            console.error("Erro ao salvar relatório:", error);
+            toast.error("Erro ao salvar o relatório.");
+        } finally {
+            setIsSaving(false);
         }
-
-        for (const item of reportItems) {
-            const historyEntry = {
-                action: 'Entrega (Recebimento)',
-                date: new Date().toISOString(),
-                details: `Quantidade recebida: ${item.currentCount}`,
-                reportId: reportId
-            };
-
-            await updateDoc(doc(db, 'products', item.productId), {
-                history: arrayUnion(historyEntry),
-                updatedAt: serverTimestamp()
-            });
-        }
-
-        setIsModalOpen(false);
-        setReportItems([]);
-        setNotes('');
-        setTitle('');
-        setTempImages([]);
-        setCurrentReport(null);
     };
 
     const deleteReport = async (id: string) => {
@@ -921,6 +933,7 @@ const Entregas = () => {
                                                     i.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
                                                     i.description.toLowerCase().includes(searchTerm.toLowerCase())
                                                 )
+                                                .sort((a, b) => a.sku.localeCompare(b.sku, undefined, { numeric: true }))
                                                 .map((item, idx) => {
                                                     const originalIndex = reportItems.findIndex(ri => ri === item);
                                                     return (
@@ -973,6 +986,7 @@ const Entregas = () => {
                                             i.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
                                             i.description.toLowerCase().includes(searchTerm.toLowerCase())
                                         )
+                                        .sort((a, b) => a.sku.localeCompare(b.sku, undefined, { numeric: true }))
                                         .map((item, idx) => {
                                             const originalIndex = reportItems.findIndex(ri => ri === item);
                                             return (
@@ -1020,10 +1034,11 @@ const Entregas = () => {
                             <button onClick={handleCloseModal} className="order-3 md:order-1 px-6 py-2 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-white transition-colors">Cancelar</button>
                             <button 
                                 onClick={() => saveReport('completed')} 
-                                disabled={reportItems.length === 0} 
-                                className="order-1 md:order-3 px-8 py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white font-bold rounded-xl transition-all shadow-lg active:scale-95"
+                                disabled={reportItems.length === 0 || isSaving} 
+                                className="order-1 md:order-3 px-8 py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white font-bold rounded-xl transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2"
                             >
-                                Finalizar
+                                {isSaving && <Loader2 size={20} className="animate-spin" />}
+                                {isSaving ? 'Salvando...' : 'Finalizar'}
                             </button>
                         </div>
                     </div>

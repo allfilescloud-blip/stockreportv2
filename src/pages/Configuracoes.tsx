@@ -122,7 +122,7 @@ const Configuracoes = () => {
         { id: 'Notificações', title: 'Notificações', icon: Bell, description: 'Configure alertas de estoque baixo e novos relatórios' },
         { id: 'Locais', title: 'Locais de Estoque', icon: MapPin, description: 'Gerencie depósitos e prateleiras' },
         { id: 'Database', title: 'Banco de Dados', icon: DatabaseIcon, description: 'Exportar dados, limpar cache e backups', adminOnly: true },
-        { id: 'Logs', title: 'Log de Sistema', icon: ClipboardList, description: 'Histórico de ações e alterações', adminOnly: true },
+        { id: 'Logs', title: 'Log de Sistema', icon: ClipboardList, description: 'Histórico de ações e alterações' },
         { id: 'Acessos', title: 'Segurança e Acessos', icon: Shield, description: 'Gerenciar permissões e novos cadastros', adminOnly: true },
         { id: 'Sobre', title: 'Sobre o Sistema', icon: Info, description: 'Versão 1.1.0 - StockReport Intelligence' },
     ];
@@ -186,7 +186,10 @@ const Configuracoes = () => {
                                 </div>
                                 <button className="w-full py-3.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-white rounded-xl font-bold transition-all border border-slate-300 dark:border-slate-700">Alterar Senha</button>
                                 <button
-                                    onClick={() => auth.signOut()}
+                                    onClick={async () => {
+                                        await logEvent('auth', 'Logout', 'Usuário saiu do sistema.');
+                                        auth.signOut();
+                                    }}
                                     className="w-full py-3.5 bg-red-500/10 hover:bg-red-500 text-red-500 hover:text-white rounded-xl font-bold transition-all border border-red-500/20"
                                 >
                                     Sair da Conta
@@ -380,7 +383,7 @@ const Configuracoes = () => {
                         <DatabaseTools />
                     )}
 
-                    {activeTab === 'Logs' && isAdmin && (
+                    {activeTab === 'Logs' && (
                         <SystemLogs />
                     )}
 

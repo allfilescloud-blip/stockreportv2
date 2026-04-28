@@ -3,12 +3,14 @@ import { signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'fire
 import { useNavigate } from 'react-router-dom';
 import { doc, setDoc } from 'firebase/firestore';
 import { auth, db } from '../db/firebase';
-import { Package, UserPlus, LogIn, Mail, Lock, Loader2 } from 'lucide-react';
+import { Package, UserPlus, LogIn, Mail, Lock, Loader2, Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
+import { useSystemLog } from '../hooks/useSystemLog';
 
 const Login = () => {
     const navigate = useNavigate();
     const { allowRegistration } = useAuth();
+    const { logEvent } = useSystemLog();
     const [isRegistering, setIsRegistering] = useState(false);
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
@@ -16,6 +18,8 @@ const Login = () => {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
+    const [showPassword, setShowPassword] = useState(false);
+    const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
     const handleAuth = async (e: FormEvent) => {
         e.preventDefault();
@@ -46,7 +50,8 @@ const Login = () => {
                 setPassword('');
                 setConfirmPassword('');
             } else {
-                await signInWithEmailAndPassword(auth, email, password);
+                const userCredential = await signInWithEmailAndPassword(auth, email, password);
+                await logEvent('auth', 'Login', `Usuário realizou login no sistema.`, userCredential.user);
                 navigate('/');
             }
         } catch (err: any) {
@@ -102,6 +107,8 @@ const Login = () => {
                             <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
                             <input
                                 type="email"
+                                name="email"
+                                autoComplete="username"
                                 value={email}
                                 onChange={(e) => setEmail(e.target.value)}
                                 className="w-full pl-12 pr-4 py-3.5 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-2xl text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all placeholder:text-slate-600"
@@ -116,13 +123,22 @@ const Login = () => {
                         <div className="relative">
                             <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
                             <input
-                                type="password"
+                                type={showPassword ? "text" : "password"}
+                                name="password"
+                                autoComplete={isRegistering ? "new-password" : "current-password"}
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}
-                                className="w-full pl-12 pr-4 py-3.5 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-2xl text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all placeholder:text-slate-600"
+                                className="w-full pl-12 pr-12 py-3.5 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-2xl text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all placeholder:text-slate-600"
                                 placeholder="••••••••"
                                 required
                             />
+                            <button
+                                type="button"
+                                onClick={() => setShowPassword(!showPassword)}
+                                className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition-colors"
+                            >
+                                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                            </button>
                         </div>
                     </div>
 
@@ -132,13 +148,22 @@ const Login = () => {
                             <div className="relative">
                                 <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-500" size={18} />
                                 <input
-                                    type="password"
+                                    type={showConfirmPassword ? "text" : "password"}
+                                    name="confirmPassword"
+                                    autoComplete="new-password"
                                     value={confirmPassword}
                                     onChange={(e) => setConfirmPassword(e.target.value)}
-                                    className="w-full pl-12 pr-4 py-3.5 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-2xl text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all placeholder:text-slate-600"
+                                    className="w-full pl-12 pr-12 py-3.5 bg-slate-100 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-2xl text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all placeholder:text-slate-600"
                                     placeholder="••••••••"
                                     required
                                 />
+                                <button
+                                    type="button"
+                                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                                    className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 transition-colors"
+                                >
+                                    {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                                </button>
                             </div>
                         </div>
                     )}
