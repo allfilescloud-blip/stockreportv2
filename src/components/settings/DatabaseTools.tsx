@@ -2,8 +2,10 @@ import { useState } from 'react';
 import { Database, Download, Upload, Trash2, Loader2, AlertCircle, History as HistoryIcon, ClipboardList } from 'lucide-react';
 import { collection, getDocs, doc, setDoc, writeBatch } from 'firebase/firestore';
 import { db } from '../../db/firebase';
+import { useSystemLog } from '../../hooks/useSystemLog';
 
 export const DatabaseTools = () => {
+    const { logEvent } = useSystemLog();
     const [isExporting, setIsExporting] = useState(false);
     const [isImporting, setIsImporting] = useState(false);
     const [isPurging, setIsPurging] = useState(false);
@@ -36,6 +38,7 @@ export const DatabaseTools = () => {
             a.click();
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
+            await logEvent('settings', 'Exportação de Backup', 'Backup completo do sistema exportado para JSON.');
         } catch (error) {
             console.error('Erro ao exportar backup:', error);
             alert('Erro ao exportar backup.');
@@ -69,6 +72,7 @@ export const DatabaseTools = () => {
                         await setDoc(doc(db, colName, id), data, { merge: true });
                     }
                 }
+                await logEvent('settings', 'Importação de Backup', `Backup restaurado com sucesso do arquivo: ${importFile?.name}`);
                 alert('Importação concluída com sucesso!');
                 window.location.reload();
             };
@@ -185,6 +189,7 @@ export const DatabaseTools = () => {
                     await batch.commit();
                 }
 
+                await logEvent('settings', 'Limpeza de Dados', `Expurgo realizado na coleção '${purgeType}' (Retenção: ${purgeDays} dias). Itens removidos: ${deletedCount}`);
                 alert(`${deletedCount} registros de log foram removidos.`);
             }
         } catch (error) {

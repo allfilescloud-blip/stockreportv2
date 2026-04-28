@@ -13,7 +13,7 @@ export const useSystemLog = () => {
                 timestamp: serverTimestamp(),
                 userId: currentUser.uid,
                 userEmail: currentUser.email,
-                userName: currentUser.displayName || currentUser.email?.split('@')[0] || 'Usuário',
+                userName: currentUser.displayName || currentUser.email?.split('@')[0] || currentUser.email || 'Usuário',
                 type,
                 action,
                 details
