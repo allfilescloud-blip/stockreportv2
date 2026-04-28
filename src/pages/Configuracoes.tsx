@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Settings as SettingsIcon, User, Shield, Bell, Info, MapPin, Database as DatabaseIcon, Sliders, AlertTriangle, ClipboardList, Check, UserCircle } from 'lucide-react';
+import { Settings as SettingsIcon, User, Shield, Bell, Info, MapPin, Database as DatabaseIcon, Sliders, AlertTriangle, ClipboardList, Check, UserCircle, Loader2 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { doc, setDoc, getDoc, collection, query, onSnapshot, updateDoc } from 'firebase/firestore';
 import { auth, db } from '../db/firebase';
@@ -176,8 +176,8 @@ const Configuracoes = () => {
                                     : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-500 dark:text-slate-400 hover:bg-slate-100/50 dark:bg-slate-800/50 hover:border-slate-300 dark:border-slate-700'
                                     }`}
                             >
-                                <section.icon size={22} className={activeTab === section.id ? 'text-white' : 'group-hover:text-blue-400'} />
-                                <span className={`font-bold ${activeTab === section.id ? 'text-slate-900 dark:text-white' : 'text-slate-700 dark:text-slate-300'}`}>{section.title}</span>
+                                <section.icon size={22} className={activeTab === section.id ? 'text-white' : 'group-hover:text-blue-400 transition-colors'} />
+                                <span className={`font-bold ${activeTab === section.id ? 'text-white' : 'text-slate-700 dark:text-slate-300'}`}>{section.title}</span>
                             </button>
                         )
                     ))}
@@ -186,78 +186,131 @@ const Configuracoes = () => {
                 {/* Conteúdo da Aba */}
                 <div className="lg:col-span-3 space-y-6">
                     {activeTab === 'Geral' && (
-                        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-8 animate-in fade-in slide-in-from-right-4 duration-300">
-                            <div className="flex items-center gap-6 mb-8">
-                                <div className="w-24 h-24 bg-blue-600 rounded-2xl flex items-center justify-center text-4xl font-bold text-white uppercase shadow-xl rotate-3 transform transition-transform hover:rotate-0">
-                                    {user?.displayName?.charAt(0) || user?.email?.charAt(0)}
-                                </div>
-                                <div>
-                                    <p className="text-slate-900 dark:text-white font-bold text-2xl tracking-tight">{user?.displayName || user?.email}</p>
-                                    <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase mt-2 ${isAdmin ? 'bg-amber-500/10 text-amber-500' : 'bg-blue-500/10 text-blue-500'}`}>
-                                        <Shield size={12} />
-                                        {isAdmin ? 'Administrador' : 'Usuário Padrão'}
-                                    </span>
+                        <div className="animate-in fade-in slide-in-from-right-4 duration-500 space-y-6">
+                            {/* Card de Perfil Principal */}
+                            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-8 shadow-xl shadow-slate-200/50 dark:shadow-none relative overflow-hidden group">
+                                <div className="absolute top-0 right-0 w-32 h-32 bg-blue-600/5 rounded-full -mr-16 -mt-16 transition-transform group-hover:scale-110" />
+                                
+                                <div className="flex flex-col md:flex-row items-center gap-8 relative z-10">
+                                    <div className="relative">
+                                        <div className="w-28 h-28 bg-gradient-to-br from-blue-600 to-indigo-700 rounded-3xl flex items-center justify-center text-4xl font-black text-white uppercase shadow-2xl rotate-3 transform transition-transform hover:rotate-0">
+                                            {user?.displayName?.charAt(0) || user?.email?.charAt(0)}
+                                        </div>
+                                        <div className="absolute -bottom-2 -right-2 bg-emerald-500 border-4 border-white dark:border-slate-900 w-8 h-8 rounded-full shadow-lg" title="Online" />
+                                    </div>
+                                    
+                                    <div className="text-center md:text-left">
+                                        <h2 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight mb-1">
+                                            {user?.displayName || "Usuário sem Nome"}
+                                        </h2>
+                                        <p className="text-slate-500 dark:text-slate-400 font-medium flex items-center justify-center md:justify-start gap-2">
+                                            {user?.email}
+                                        </p>
+                                        <div className="flex flex-wrap justify-center md:justify-start gap-2 mt-4">
+                                            <span className={`inline-flex items-center gap-1.5 px-4 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider ${isAdmin ? 'bg-amber-500/10 text-amber-500 border border-amber-500/20' : 'bg-blue-500/10 text-blue-500 border border-blue-500/20'}`}>
+                                                <Shield size={14} />
+                                                {isAdmin ? 'Administrador' : 'Usuário Padrão'}
+                                            </span>
+                                            <span className="bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 px-4 py-1.5 rounded-xl text-xs font-bold border border-slate-200 dark:border-slate-700">
+                                                ID: {user?.uid.substring(0, 8)}...
+                                            </span>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
-                            <div className="grid gap-4 max-w-md">
-                                <div className="p-4 bg-slate-100/30 dark:bg-slate-800/30 border border-slate-300 dark:border-slate-700 rounded-2xl mb-2">
-                                    <h3 className="text-slate-900 dark:text-white font-bold mb-3 flex items-center gap-2">
-                                        <UserCircle size={18} className="text-blue-500" />
-                                        Perfil do Usuário
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                {/* Informações Pessoais */}
+                                <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-lg">
+                                    <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-6 flex items-center gap-2">
+                                        <UserCircle size={22} className="text-blue-500" />
+                                        Informações Pessoais
                                     </h3>
-                                    <div className="space-y-4">
+                                    
+                                    <div className="space-y-5">
                                         <div>
-                                            <label className="block text-xs font-semibold text-slate-500 uppercase mb-2 ml-1">Nome de Exibição</label>
-                                            <div className="flex gap-2">
+                                            <label className="block text-xs font-black text-slate-500 uppercase mb-2 ml-1 tracking-widest">Nome de Exibição</label>
+                                            <div className="relative group">
                                                 <input
                                                     type="text"
                                                     value={newName}
                                                     onChange={(e) => setNewName(e.target.value)}
-                                                    placeholder="Seu nome ou apelido"
-                                                    className="flex-1 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl px-4 py-2 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                                                    placeholder={user?.email || "Seu nome"}
+                                                    className="w-full bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-2xl px-5 py-3.5 text-slate-900 dark:text-white focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none transition-all font-medium"
                                                 />
                                                 <button
                                                     onClick={handleUpdateProfile}
                                                     disabled={isSavingName || newName === (user?.displayName || '')}
-                                                    className="p-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl transition-all shadow-md active:scale-95"
-                                                    title="Salvar Nome"
+                                                    className="absolute right-2 top-2 bottom-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-4 rounded-xl transition-all shadow-lg active:scale-95 flex items-center gap-2 font-bold text-sm"
                                                 >
-                                                    {isSavingName ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Check size={20} />}
+                                                    {isSavingName ? <Loader2 size={16} className="animate-spin" /> : <Check size={18} />}
+                                                    <span>Salvar</span>
                                                 </button>
                                             </div>
+                                            <p className="mt-2 text-[10px] text-slate-400 italic ml-1">
+                                                * Caso vazio, será exibido seu e-mail como padrão.
+                                            </p>
                                         </div>
+
                                         <div>
-                                            <label className="block text-xs font-semibold text-slate-500 uppercase mb-2 ml-1">E-mail (Não editável)</label>
-                                            <input
-                                                type="text"
-                                                value={user?.email || ''}
-                                                disabled
-                                                className="w-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2 text-slate-500 cursor-not-allowed opacity-60"
-                                            />
+                                            <label className="block text-xs font-black text-slate-500 uppercase mb-2 ml-1 tracking-widest">E-mail Cadastrado</label>
+                                            <div className="w-full bg-slate-100/50 dark:bg-slate-800/30 border border-slate-200 dark:border-slate-700 rounded-2xl px-5 py-3.5 text-slate-500 cursor-not-allowed flex items-center justify-between">
+                                                <span className="font-medium">{user?.email}</span>
+                                                <Shield size={16} className="opacity-30" />
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
 
-                                <div className="p-4 bg-slate-100/30 dark:bg-slate-800/30 border border-slate-300 dark:border-slate-700 rounded-2xl mb-2">
-                                    <h3 className="text-slate-900 dark:text-white font-bold mb-3 flex items-center gap-2">
-                                        Tema do Sistema
-                                    </h3>
-                                    <div className="grid grid-cols-3 gap-2">
-                                        <button onClick={() => setTheme('light')} className={`py-2 rounded-xl text-sm font-bold border transition-all ${theme === 'light' ? 'bg-blue-600 border-blue-500 text-white' : 'bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:text-white hover:bg-slate-200 dark:bg-slate-700'}`}>Claro</button>
-                                        <button onClick={() => setTheme('dark')} className={`py-2 rounded-xl text-sm font-bold border transition-all ${theme === 'dark' ? 'bg-blue-600 border-blue-500 text-white' : 'bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:text-white hover:bg-slate-200 dark:bg-slate-700'}`}>Escuro</button>
-                                        <button onClick={() => setTheme('system')} className={`py-2 rounded-xl text-sm font-bold border transition-all ${theme === 'system' ? 'bg-blue-600 border-blue-500 text-white' : 'bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:text-white hover:bg-slate-200 dark:bg-slate-700'}`}>Sistema</button>
+                                {/* Preferências e Segurança */}
+                                <div className="space-y-6">
+                                    {/* Tema */}
+                                    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-lg">
+                                        <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-6 flex items-center gap-2">
+                                            <Sliders size={22} className="text-blue-500" />
+                                            Preferência de Tema
+                                        </h3>
+                                        <div className="grid grid-cols-3 gap-3">
+                                            {[
+                                                { id: 'light', label: 'Claro' },
+                                                { id: 'dark', label: 'Escuro' },
+                                                { id: 'system', label: 'Sistema' }
+                                            ].map((t) => (
+                                                <button 
+                                                    key={t.id}
+                                                    onClick={() => setTheme(t.id as any)} 
+                                                    className={`py-3 rounded-2xl text-xs font-bold border transition-all ${theme === t.id 
+                                                        ? 'bg-blue-600 border-blue-500 text-white shadow-lg shadow-blue-900/20' 
+                                                        : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:bg-white dark:hover:bg-slate-700'}`}
+                                                >
+                                                    {t.label}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    {/* Ações Rápidas */}
+                                    <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 shadow-lg">
+                                        <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-6">Ações da Conta</h3>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                            <button className="flex items-center justify-center gap-2 py-3.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-white rounded-2xl font-bold transition-all border border-slate-300 dark:border-slate-700 active:scale-95 text-sm">
+                                                Alterar Senha
+                                            </button>
+                                                <button
+                                                    onClick={async () => {
+                                                        const confirm = window.confirm("Deseja realmente sair do sistema?");
+                                                        if (confirm) {
+                                                            await logEvent('auth', 'Logout', 'Usuário saiu do sistema.');
+                                                            auth.signOut();
+                                                        }
+                                                    }}
+                                                    className="flex items-center justify-center gap-2 py-3.5 bg-red-500/10 hover:bg-red-500 text-red-500 hover:text-white rounded-2xl font-bold transition-all border border-red-500/20 active:scale-95 text-sm"
+                                                >
+                                                    Sair da Conta
+                                                </button>
+                                        </div>
                                     </div>
                                 </div>
-                                <button className="w-full py-3.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-white rounded-xl font-bold transition-all border border-slate-300 dark:border-slate-700">Alterar Senha</button>
-                                <button
-                                    onClick={async () => {
-                                        await logEvent('auth', 'Logout', 'Usuário saiu do sistema.');
-                                        auth.signOut();
-                                    }}
-                                    className="w-full py-3.5 bg-red-500/10 hover:bg-red-500 text-red-500 hover:text-white rounded-xl font-bold transition-all border border-red-500/20"
-                                >
-                                    Sair da Conta
-                                </button>
                             </div>
                         </div>
                     )}
