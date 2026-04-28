@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react';
-import { Settings as SettingsIcon, User, Shield, Bell, Info, MapPin, Database as DatabaseIcon, Sliders, AlertTriangle, ClipboardList } from 'lucide-react';
+import { Settings as SettingsIcon, User, Shield, Bell, Info, MapPin, Database as DatabaseIcon, Sliders, AlertTriangle, ClipboardList, Check, UserCircle } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
-import { doc, setDoc, getDoc, collection, query, onSnapshot } from 'firebase/firestore';
+import { doc, setDoc, getDoc, collection, query, onSnapshot, updateDoc } from 'firebase/firestore';
 import { auth, db } from '../db/firebase';
+import { updateProfile } from 'firebase/auth';
 import { useTheme } from '../contexts/ThemeContext';
 import toast from 'react-hot-toast';
 
@@ -56,9 +56,12 @@ const Configuracoes = () => {
     });
 
     const [locations, setLocations] = useState<Location[]>([]);
+    const [newName, setNewName] = useState(user?.displayName || '');
+    const [isSavingName, setIsSavingName] = useState(false);
 
     useEffect(() => {
         if (user) {
+            setNewName(user.displayName || '');
             const loadUserNotifications = async () => {
                 const settingsDoc = await getDoc(doc(db, 'users', user.uid, 'settings', 'notifications'));
                 if (settingsDoc.exists()) {
@@ -116,6 +119,28 @@ const Configuracoes = () => {
         }
     };
 
+    const handleUpdateProfile = async () => {
+        if (!user) return;
+        setIsSavingName(true);
+        try {
+            // 1. Atualizar no Firebase Auth
+            await updateProfile(user, { displayName: newName.trim() || null });
+            
+            // 2. Atualizar no Firestore (coleção users)
+            await updateDoc(doc(db, 'users', user.uid), {
+                displayName: newName.trim() || null
+            });
+
+            await logEvent('settings', 'Perfil Atualizado', `Nome de exibição alterado para: ${newName || 'E-mail (Padrão)'}`);
+            toast.success('Perfil atualizado com sucesso!');
+        } catch (error) {
+            console.error('Erro ao atualizar perfil:', error);
+            toast.error('Erro ao atualizar perfil');
+        } finally {
+            setIsSavingName(false);
+        }
+    };
+
     const sections = [
         { id: 'Geral', title: 'Conta', icon: User, description: 'Gerencie suas informações de perfil e senha' },
         { id: 'Opções', title: 'Opções', icon: Sliders, description: 'Configure o comportamento de campos e regras do sistema' },
@@ -163,10 +188,10 @@ const Configuracoes = () => {
                         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-8 animate-in fade-in slide-in-from-right-4 duration-300">
                             <div className="flex items-center gap-6 mb-8">
                                 <div className="w-24 h-24 bg-blue-600 rounded-2xl flex items-center justify-center text-4xl font-bold text-white uppercase shadow-xl rotate-3 transform transition-transform hover:rotate-0">
-                                    {user?.email?.charAt(0)}
+                                    {user?.displayName?.charAt(0) || user?.email?.charAt(0)}
                                 </div>
                                 <div>
-                                    <p className="text-slate-900 dark:text-white font-bold text-2xl tracking-tight">{user?.email}</p>
+                                    <p className="text-slate-900 dark:text-white font-bold text-2xl tracking-tight">{user?.displayName || user?.email}</p>
                                     <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase mt-2 ${isAdmin ? 'bg-amber-500/10 text-amber-500' : 'bg-blue-500/10 text-blue-500'}`}>
                                         <Shield size={12} />
                                         {isAdmin ? 'Administrador' : 'Usuário Padrão'}
@@ -174,6 +199,44 @@ const Configuracoes = () => {
                                 </div>
                             </div>
                             <div className="grid gap-4 max-w-md">
+                                <div className="p-4 bg-slate-100/30 dark:bg-slate-800/30 border border-slate-300 dark:border-slate-700 rounded-2xl mb-2">
+                                    <h3 className="text-slate-900 dark:text-white font-bold mb-3 flex items-center gap-2">
+                                        <UserCircle size={18} className="text-blue-500" />
+                                        Perfil do Usuário
+                                    </h3>
+                                    <div className="space-y-4">
+                                        <div>
+                                            <label className="block text-xs font-semibold text-slate-500 uppercase mb-2 ml-1">Nome de Exibição</label>
+                                            <div className="flex gap-2">
+                                                <input
+                                                    type="text"
+                                                    value={newName}
+                                                    onChange={(e) => setNewName(e.target.value)}
+                                                    placeholder="Seu nome ou apelido"
+                                                    className="flex-1 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl px-4 py-2 text-slate-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                                                />
+                                                <button
+                                                    onClick={handleUpdateProfile}
+                                                    disabled={isSavingName || newName === (user?.displayName || '')}
+                                                    className="p-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl transition-all shadow-md active:scale-95"
+                                                    title="Salvar Nome"
+                                                >
+                                                    {isSavingName ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Check size={20} />}
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-semibold text-slate-500 uppercase mb-2 ml-1">E-mail (Não editável)</label>
+                                            <input
+                                                type="text"
+                                                value={user?.email || ''}
+                                                disabled
+                                                className="w-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2 text-slate-500 cursor-not-allowed opacity-60"
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+
                                 <div className="p-4 bg-slate-100/30 dark:bg-slate-800/30 border border-slate-300 dark:border-slate-700 rounded-2xl mb-2">
                                     <h3 className="text-slate-900 dark:text-white font-bold mb-3 flex items-center gap-2">
                                         Tema do Sistema
