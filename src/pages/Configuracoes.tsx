@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import { Settings as SettingsIcon, User, Shield, Bell, Info, MapPin, Database as DatabaseIcon, Sliders, AlertTriangle, ClipboardList, Check, UserCircle } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth';
 import { doc, setDoc, getDoc, collection, query, onSnapshot, updateDoc } from 'firebase/firestore';
