@@ -661,8 +661,6 @@ const Inventario = () => {
             ? Math.max(...reports.map(r => r.sequentialId || 0)) + 1
             : 1;
 
-        const locationObj = locations.find(l => l.id === sourceReport.locationId);
-        
         // Determinar o ID de exibição do relatório original para o título
         const index = reports.findIndex(r => r.id === sourceReport.id);
         const displayId = sourceReport.sequentialId || (reports.length - index);
@@ -1141,7 +1139,7 @@ const Inventario = () => {
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-200 dark:divide-slate-800 bg-white/30 dark:bg-slate-900/30">
-                                            {filteredAndSortedItems.map((item, idx) => {
+                                            {filteredAndSortedItems.map((item) => {
                                                 const diff = item.currentCount - item.previousCount;
                                                 const originalIdx = reportItems.findIndex(ri => ri.sku === item.sku);
                                                 return (
@@ -1194,7 +1192,7 @@ const Inventario = () => {
                                 </div>
 
                                 <div className="md:hidden space-y-3">
-                                    {filteredAndSortedItems.map((item, idx) => {
+                                    {filteredAndSortedItems.map((item) => {
                                         const diff = item.currentCount - item.previousCount;
                                         const originalIdx = reportItems.findIndex(ri => ri.sku === item.sku);
                                         return (
