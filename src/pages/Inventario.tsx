@@ -94,6 +94,9 @@ const Inventario = () => {
     const [defaultUnifiedLocationId, setDefaultUnifiedLocationId] = useState('');
     const [isCloning, setIsCloning] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
+    const [isMerging, setIsMerging] = useState(false);
+    const [isCloningAction, setIsCloningAction] = useState(false);
+    const [isSumming, setIsSumming] = useState(false);
     
     const filteredAndSortedItems = useMemo(() => {
         if (!searchTerm) {
@@ -314,12 +317,13 @@ const Inventario = () => {
 
     const handleSum = async () => {
         if (summingIndex !== null && sumValue !== '') {
-            const item = reportItems[summingIndex];
-            const amountToAdd = Number(sumValue);
-            
-            if (currentReport && !currentReport.id.startsWith('unified-')) {
-                const docRef = doc(db, 'reports', currentReport.id);
-                try {
+            setIsSumming(true);
+            try {
+                const item = reportItems[summingIndex];
+                const amountToAdd = Number(sumValue);
+                
+                if (currentReport && !currentReport.id.startsWith('unified-')) {
+                    const docRef = doc(db, 'reports', currentReport.id);
                     await runTransaction(db, async (transaction) => {
                         const sfDoc = await transaction.get(docRef);
                         if (!sfDoc.exists()) throw new Error("Documento não encontrado");
@@ -333,16 +337,20 @@ const Inventario = () => {
                              });
                         }
                     });
-                } catch (error) { toast.error("Erro ao somar no banco!"); return; }
-            } else {
-                const updatedItems = [...reportItems];
-                updatedItems[summingIndex].currentCount += amountToAdd;
-                setReportItems(updatedItems);
+                } else {
+                    const updatedItems = [...reportItems];
+                    updatedItems[summingIndex].currentCount += amountToAdd;
+                    setReportItems(updatedItems);
+                }
+                
+                setSummingIndex(null);
+                setSumValue('');
+                skuInputRef.current?.focus();
+            } catch (error) {
+                toast.error("Erro ao somar no banco!");
+            } finally {
+                setIsSumming(false);
             }
-            
-            setSummingIndex(null);
-            setSumValue('');
-            skuInputRef.current?.focus();
         }
     };
 
@@ -591,8 +599,10 @@ const Inventario = () => {
 
     const handleMergeReports = async () => {
         if (selectedReports.length < 2) return;
+        setIsMerging(true);
 
-        const reportsToMerge = reports.filter(r => selectedReports.includes(r.id));
+        try {
+            const reportsToMerge = reports.filter(r => selectedReports.includes(r.id));
         const mergedItemsMap = new Map<string, ReportItem>();
 
         reportsToMerge.forEach(report => {
@@ -643,12 +653,20 @@ const Inventario = () => {
         setIsModalOpen(true);
         setSelectedReports([]);
         await logEvent('report', 'Unificação de Inventários', `Unificados ${selectedReports.length} inventários.`);
+        } catch (err) {
+            console.error("Erro ao unificar:", err);
+            toast.error("Erro ao unificar relatórios.");
+        } finally {
+            setIsMerging(false);
+        }
     };
 
     const handleCloneReport = async () => {
         if (!isAdmin || selectedReports.length !== 1) return;
-        const reportId = selectedReports[0];
-        const sourceReport = reports.find(r => r.id === reportId);
+        setIsCloningAction(true);
+        try {
+            const reportId = selectedReports[0];
+            const sourceReport = reports.find(r => r.id === reportId);
         if (!sourceReport) return;
 
         // Clonagem profunda dos itens para evitar referências compartilhadas
@@ -666,8 +684,7 @@ const Inventario = () => {
         const displayId = sourceReport.sequentialId || (reports.length - index);
         const newTitle = '';
 
-        try {
-            const newDoc = await addDoc(collection(db, 'reports'), {
+        const newDoc = await addDoc(collection(db, 'reports'), {
                 type: 'inventory',
                 title: newTitle,
                 items: clonedItems,
@@ -705,6 +722,8 @@ const Inventario = () => {
         } catch (err) {
             console.error("Erro ao clonar:", err);
             toast.error("Erro ao clonar inventário no banco.");
+        } finally {
+            setIsCloningAction(false);
         }
     };
 
@@ -818,19 +837,21 @@ const Inventario = () => {
                 {isAdmin && selectedReports.length === 1 && (
                     <button
                         onClick={handleCloneReport}
-                        className="w-full md:w-auto flex items-center justify-center space-x-2 bg-indigo-500 hover:bg-indigo-600 text-white px-8 py-2.5 rounded-xl transition-all shadow-lg shadow-indigo-900/20 font-bold"
+                        disabled={isCloningAction}
+                        className="w-full md:w-auto flex items-center justify-center space-x-2 bg-indigo-500 hover:bg-indigo-600 text-white px-8 py-2.5 rounded-xl transition-all shadow-lg shadow-indigo-900/20 font-bold disabled:opacity-50"
                     >
-                        <Copy size={20} />
-                        <span>Clonar</span>
+                        {isCloningAction ? <Loader2 size={20} className="animate-spin" /> : <Copy size={20} />}
+                        <span>{isCloningAction ? 'Clonando...' : 'Clonar'}</span>
                     </button>
                 )}
                 {selectedReports.length > 1 && (
                     <button
                         onClick={handleMergeReports}
-                        className="w-full md:w-auto flex items-center justify-center space-x-2 bg-indigo-600 hover:bg-indigo-700 text-white px-8 py-2.5 rounded-xl transition-all shadow-lg shadow-indigo-900/20 font-bold"
+                        disabled={isMerging}
+                        className="w-full md:w-auto flex items-center justify-center space-x-2 bg-indigo-600 hover:bg-indigo-700 text-white px-8 py-2.5 rounded-xl transition-all shadow-lg shadow-indigo-900/20 font-bold disabled:opacity-50"
                     >
-                        <Layers size={20} />
-                        <span>Unificar ({selectedReports.length})</span>
+                        {isMerging ? <Loader2 size={20} className="animate-spin" /> : <Layers size={20} />}
+                        <span>{isMerging ? 'Unificando...' : `Unificar (${selectedReports.length})`}</span>
                     </button>
                 )}
                 <button
@@ -1253,7 +1274,7 @@ const Inventario = () => {
                                 disabled={reportItems.length === 0 || isSaving}
                                 className="order-1 md:order-2 px-8 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold rounded-xl transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2"
                             >
-                                {isSaving && <Loader2 size={20} className="animate-spin" />}
+                                {isSaving ? <Loader2 size={20} className="animate-spin" /> : <CheckCheck size={20} />}
                                 {isSaving ? 'Salvando...' : 'Finalizar Relatório'}
                             </button>
                         </div>
@@ -1366,14 +1387,18 @@ const Inventario = () => {
                         <div className="p-6 border-t border-slate-200 dark:border-slate-800 flex flex-col gap-3">
                             <button
                                 onClick={() => handleSaveWithMissing(true)}
-                                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl transition-all shadow-lg"
+                                disabled={isSaving}
+                                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl transition-all shadow-lg flex items-center justify-center gap-2"
                             >
+                                {isSaving ? <Loader2 size={20} className="animate-spin" /> : null}
                                 Sim, zerar itens e finalizar
                             </button>
                             <button
                                 onClick={() => handleSaveWithMissing(false)}
-                                className="w-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold py-3 rounded-xl transition-all"
+                                disabled={isSaving}
+                                className="w-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold py-3 rounded-xl transition-all flex items-center justify-center gap-2"
                             >
+                                {isSaving ? <Loader2 size={20} className="animate-spin" /> : null}
                                 Não, apenas finalizar
                             </button>
                         </div>
@@ -1406,16 +1431,18 @@ const Inventario = () => {
                             <div className="flex gap-3">
                                 <button
                                     onClick={() => { setSummingIndex(null); setSumValue(''); }}
-                                    className="flex-1 py-3 text-slate-500 font-semibold"
+                                    className="flex-1 py-3 text-slate-500 font-semibold disabled:opacity-50"
+                                    disabled={isSumming}
                                 >
                                     Cancelar
                                 </button>
                                 <button
                                     onClick={handleSum}
-                                    disabled={sumValue === ''}
-                                    className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-xl transition-all"
+                                    disabled={sumValue === '' || isSumming}
+                                    className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-xl transition-all shadow-lg flex items-center justify-center gap-2"
                                 >
-                                    Somar
+                                    {isSumming ? <Loader2 size={18} className="animate-spin" /> : <Calculator size={18} />}
+                                    {isSumming ? 'Somando...' : 'Somar'}
                                 </button>
                             </div>
                         </div>

@@ -79,6 +79,7 @@ const Entregas = () => {
     const [reportToShare, setReportToShare] = useState<Report | null>(null);
     const [printIdToShare, setPrintIdToShare] = useState<number>(0);
     const [isSaving, setIsSaving] = useState(false);
+    const [isSumming, setIsSumming] = useState(false);
 
     const { reports, loading } = useReports<Report>('delivery', filterDate);
     const { user } = useAuth();
@@ -236,25 +237,28 @@ const Entregas = () => {
 
     const handleSum = async () => {
         if (summingIndex !== null && sumValue !== '') {
-            const updatedItems = [...reportItems];
-            updatedItems[summingIndex].currentCount += Number(sumValue);
-            
-            if (currentReport) {
-                const docRef = doc(db, 'reports', currentReport.id);
-                try {
+            setIsSumming(true);
+            try {
+                const updatedItems = [...reportItems];
+                updatedItems[summingIndex].currentCount += Number(sumValue);
+                
+                if (currentReport) {
+                    const docRef = doc(db, 'reports', currentReport.id);
                     await updateDoc(docRef, {
                         items: updatedItems,
                         updatedAt: serverTimestamp()
                     });
-                } catch (err) {
-                    console.error("Erro ao sincronizar soma:", err);
+                } else {
+                    setReportItems(updatedItems);
                 }
-            } else {
-                setReportItems(updatedItems);
+                
+                setSummingIndex(null);
+                setSumValue('');
+            } catch (error) {
+                toast.error("Erro ao somar!");
+            } finally {
+                setIsSumming(false);
             }
-            
-            setSummingIndex(null);
-            setSumValue('');
         }
     };
 
@@ -1031,14 +1035,20 @@ const Entregas = () => {
                         </div>
 
                         <div className="p-6 border-t border-slate-200 dark:border-slate-800 bg-white/50 dark:bg-slate-900/50 flex flex-col md:flex-row justify-end gap-3 md:gap-4">
-                            <button onClick={handleCloseModal} className="order-3 md:order-1 px-6 py-2 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-white transition-colors">Cancelar</button>
+                            <button 
+                                onClick={handleCloseModal} 
+                                disabled={isSaving || isUploading}
+                                className="order-3 md:order-1 px-6 py-2 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-white transition-colors disabled:opacity-50"
+                            >
+                                Cancelar
+                            </button>
                             <button 
                                 onClick={() => saveReport('completed')} 
-                                disabled={reportItems.length === 0 || isSaving} 
+                                disabled={reportItems.length === 0 || isSaving || isUploading} 
                                 className="order-1 md:order-3 px-8 py-2 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white font-bold rounded-xl transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2"
                             >
-                                {isSaving && <Loader2 size={20} className="animate-spin" />}
-                                {isSaving ? 'Salvando...' : 'Finalizar'}
+                                {(isSaving || isUploading) ? <Loader2 size={20} className="animate-spin" /> : <CheckCheck size={20} />}
+                                {(isSaving || isUploading) ? 'Processando...' : 'Finalizar'}
                             </button>
                         </div>
                     </div>
@@ -1114,16 +1124,18 @@ const Entregas = () => {
                                         setSummingIndex(null);
                                         setSumValue('');
                                     }}
-                                    className="flex-1 py-3 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-white font-semibold transition-colors"
+                                    disabled={isSumming}
+                                    className="flex-1 py-3 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:text-white font-semibold transition-colors disabled:opacity-50"
                                 >
                                     Cancelar
                                 </button>
                                 <button
                                     onClick={handleSum}
-                                    disabled={sumValue === ''}
-                                    className="flex-1 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold py-3 rounded-xl transition-all shadow-lg active:scale-95"
+                                    disabled={sumValue === '' || isSumming}
+                                    className="flex-1 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold py-3 rounded-xl transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2"
                                 >
-                                    Somar
+                                    {isSumming ? <Loader2 size={18} className="animate-spin" /> : <Calculator size={18} />}
+                                    {isSumming ? 'Somando...' : 'Somar'}
                                 </button>
                             </div>
                         </div>
